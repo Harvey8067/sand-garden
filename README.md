@@ -141,7 +141,8 @@ node --test --test-isolation=none tests/garden.test.mjs
 - 沙盒测试针对 legacy 版本的引擎；如需指定提取的 HTML，可用环境变量 `SAND_GARDEN_ENGINE_FILE` 指向具体文件。
 - 在禁止子进程的沙箱环境里，`node --test` 会因 spawn 报 EPERM，所以上面的命令加了 `--test-isolation=none`；普通机器上不加也可以。
 - 当前 51 项回归测试全部通过（农场规则 28、真实 UI 代码行为 6、原沙盒引擎 17）；UI 测试使用 DOM 桩，不代表真实浏览器验收。
-- 本机隔离浏览器的调试通道和截图受权限限制，真实画面与手机布局仍需人工打开确认。
+- 本机隔离浏览器的调试通道和截图受权限限制，真实画面与手机布局验收尚未完成。
+- 已提供真实浏览器验收脚本：在可正常启动 Edge / Chrome 的终端运行 `node scripts/verify-browser.mjs`。它会用独立临时配置，通过真实键鼠输入验证种田、睡觉、出售、读档，并检查 320 / 390 / 820 px 布局。结果与截图写入 `.work/browser-acceptance/`；脚本已检查语法，但尚未在本机完成运行。
 
 ## 项目结构
 
