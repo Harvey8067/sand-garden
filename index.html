@@ -24,7 +24,7 @@
 <section class="section"><div class="section-label"><span>03 / 世界的节奏</span><span>随心调整</span></div><label class="flow-row"><span>时间流速</span><select id="speed" aria-label="模拟速度"><option value="0.5">0.5 ×</option><option value="1" selected>1 ×</option><option value="2">2 ×</option></select></label><label class="flow-row"><span>让雨落下</span><input id="rain" type="checkbox"></label><label class="flow-row"><span>持续的泉水</span><input id="spring" type="checkbox" checked></label></section>
 <section class="section"><p class="tip"><strong>今天的小实验</strong><br>把种子放到泥土上，再给它一点水。等待片刻，一片新绿就会出现。</p></section>
 </aside><section class="studio" aria-label="互动像素世界"><div class="canvas-card"><div class="canvas-top"><span id="sceneLabel">01 / 林间溪谷</span><span class="live"><i></i><span id="liveLabel">世界正在生长</span></span></div><div class="stage" id="stage"><canvas id="world" width="900" height="564" tabindex="0" aria-label="像素沙盒画布，按住鼠标或拖动手指绘制材料"></canvas><div id="brushCursor"></div><div id="pauseLabel">TIME PAUSED</div></div><div class="canvas-bottom"><span><b id="particleCount">0</b> 个微小粒子</span><span id="coord">X — / Y —</span><span><b id="fps">60</b> FPS · <span id="simSteps">0</span> STEPS</span></div></div>
-<div class="timeline"><div class="play-tools"><button class="btn primary" id="pauseBtn" aria-pressed="false">Ⅱ 暂停世界</button><button class="btn" id="stepBtn" title="暂停并前进一个模拟步"><svg class="icon"><use href="#i-step"/></svg>单步</button><button class="btn" id="clearBtn"><svg class="icon"><use href="#i-clear"/></svg>清空</button></div><span class="shortcuts"><kbd>SPACE</kbd> 暂停　<kbd>E</kbd> 橡皮　<kbd>⌘ / CTRL Z</kbd> 撤销</span></div>
+<div class="timeline"><div class="play-tools"><button class="btn primary" id="pauseBtn" aria-pressed="false">Ⅱ 暂停世界</button><button class="btn" id="stepBtn" title="暂停并前进一个模拟步"><svg class="icon"><use href="#i-step"/></svg>单步</button><button class="btn" id="randomBtn" title="随机生成一座小岛"><svg class="icon"><use href="#i-clear"/></svg>随机小岛</button><button class="btn" id="clearBtn"><svg class="icon"><use href="#i-clear"/></svg>清空</button></div><span class="shortcuts"><kbd>SPACE</kbd> 暂停　<kbd>E</kbd> 橡皮　<kbd>⌘ / CTRL Z</kbd> 撤销</span></div>
 <div class="scenes" aria-label="预设场景"><button class="scene" data-scene="valley" aria-pressed="true"><div class="scene-art"><svg viewBox="0 0 48 39"><path fill="#1b333a" d="M0 0h48v39H0z"/><path fill="#78965d" d="M0 25h13v-7h10v12h25v9H0z"/><path fill="#66b8c3" d="M32 9h4v24H22v6h17V9z"/><path fill="#b6b878" d="M5 11h15v9H5z"/></svg></div><div><strong>林间溪谷</strong><span>溪水、岩石与新生</span></div></button><button class="scene" data-scene="desert" aria-pressed="false"><div class="scene-art"><svg viewBox="0 0 48 39"><path fill="#493c3c" d="M0 0h48v39H0z"/><circle fill="#dfb879" cx="34" cy="11" r="5"/><path fill="#cda363" d="m0 29 16-12 20 13 12-7v16H0z"/><path fill="#b57b4d" d="m0 35 25-10 23 11v3H0z"/></svg></div><div><strong>沙丘日落</strong><span>一粒沙的漫游</span></div></button><button class="scene" data-scene="volcano" aria-pressed="false"><div class="scene-art"><svg viewBox="0 0 48 39"><path fill="#292f3b" d="M0 0h48v39H0z"/><path fill="#69767a" d="m0 39 15-21 8 4 9-12 16 29z"/><path fill="#e38e52" d="m22 22 6 2 5-14 3 8-4 15-8-7z"/><path fill="#67aabd" d="M0 34h14v5H0z"/></svg></div><div><strong>冰与火之地</strong><span>相遇，然后改变</span></div></button></div>
 </section></div>
 <footer class="under"><span>不必完成什么。只是创造，然后观察。</span><span>原创实现 · 灵感来自 <a href="https://github.com/MaxBittker/sandspiel" target="_blank" rel="noopener noreferrer">sandspiel ↗</a> · 全部运算在本机完成</span></footer>
@@ -115,6 +115,38 @@ class Garden {
    this.sources=[{x:192,y:106,material:11,rate:5}];
   }
  }
+  island(seed){
+   this.cells.fill(0);this.life.fill(0);this.moved.fill(0);this.tick=0;
+   this.seed=(seed>>>0)||977;this.rain=false;this.sources=[];this.spring=false;this.scene='island';
+   const rnd=()=>this.random();
+   const sea=Math.floor(146+rnd()*12);
+   const cx=Math.floor(W*(.32+rnd()*.36));
+   const half=Math.max(24,Math.floor(W*(.2+rnd()*.14)));
+   const peak=18+Math.floor(rnd()*16);
+   for(let x=0;x<W;x++){
+     const tide=sea+Math.floor(Math.sin(x*.045+rnd()*.6)*2);
+     for(let y=tide;y<H;y++)this.put(x,y,2);
+   }
+   for(let x=cx-half;x<=cx+half;x++){
+     if(x<0||x>=W)continue;
+     const t=(x-cx)/half;
+     const h=Math.floor(Math.sqrt(Math.max(0,1-t*t))*peak);
+     const top=sea-h;
+     for(let y=top;y<sea+4;y++){
+       const d=y-top;
+       this.put(x,y,d<2?4:(d<4?1:3));
+     }
+   }
+   const trees=2+Math.floor(rnd()*3);
+   for(let i=0;i<trees;i++){
+     const tx=Math.round(cx+(rnd()-.5)*half*1.3);
+     if(tx<1||tx>=W-1)continue;
+     let ty=-1;
+     for(let y=0;y<H;y++){const v=this.cells[y*W+tx];if(v===4||v===1){ty=y;break;}}
+     if(ty>8)this.tree(tx,ty-1,9+Math.floor(rnd()*12));
+   }
+   if(rnd()<.6){this.sources=[{x:cx,y:Math.max(4,sea-peak+3),material:2,rate:3}];this.spring=true;}
+  }
 }
 /* UI_AND_RENDERER */
 (() => {
@@ -133,7 +165,7 @@ class Garden {
   {id:11,name:'熔岩',color:'#d87751',hint:'炽热而缓慢地流动。遇水凝固成岩石，也会点燃木头。'},
   {id:0,name:'留白',color:'#e7e8dc',hint:'擦去一些，留出新的可能。右键拖动也可以临时擦除。'}
  ];
- const sceneNames={valley:'01 / 林间溪谷',desert:'02 / 沙丘日落',volcano:'03 / 冰与火之地',empty:'04 / 从一片空白开始'};
+ const sceneNames={island:'05 / 随机小岛',valley:'01 / 林间溪谷',desert:'02 / 沙丘日落',volcano:'03 / 冰与火之地',empty:'04 / 从一片空白开始'};
  const canvas=$('world'),ctx=canvas.getContext('2d',{alpha:false});
  const buffer=document.createElement('canvas');buffer.width=W;buffer.height=H;
  const bctx=buffer.getContext('2d',{alpha:false}),image=bctx.createImageData(W,H);
@@ -231,7 +263,8 @@ $('undoBtn').onclick=undo;$('undoBtn').disabled=true;
  function confirmAction(title,text,label,action){endPointer();pendingConfirm=action;$('confirmTitle').textContent=title;$('confirmText').textContent=text;$('acceptConfirm').textContent=label;$('confirmDialog').showModal();}
  $('cancelConfirm').onclick=()=>{$('confirmDialog').close();pendingConfirm=null;};$('acceptConfirm').onclick=()=>{const action=pendingConfirm;pendingConfirm=null;$('confirmDialog').close();action?.();};$('confirmDialog').addEventListener('cancel',()=>{pendingConfirm=null;});
  $('clearBtn').onclick=()=>confirmAction('给世界留一片空白？','清空后仍可通过“撤销”找回当前画面。','确认清空',()=>{checkpoint();world.reset('empty');syncScene();toast('一片空白，也是一切的开始。');});
- document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=()=>{checkpoint();world.reset(b.dataset.scene);syncScene();setPaused(false);toast('已打开'+sceneNames[world.scene].split(' / ')[1]+'，可撤销恢复上一世界。');});
+ $('randomBtn').onclick=()=>{checkpoint();world.island((Date.now()^Math.floor(Math.random()*1e6))>>>0);syncScene();setPaused(false);toast('一座新的小岛浮出海面，每次都不一样。');};
+document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=()=>{checkpoint();world.reset(b.dataset.scene);syncScene();setPaused(false);toast('已打开'+sceneNames[world.scene].split(' / ')[1]+'，可撤销恢复上一世界。');});
  const storageKey='sand-garden-save-v1';
  $('saveBtn').onclick=()=>{try{const record={...world.snapshot(),savedAt:new Date().toISOString()};localStorage.setItem(storageKey,JSON.stringify(record));savedAt=record.savedAt;$('loadBtn').disabled=false;toast('已保存到这个浏览器。随时可以继续这座花园。');}catch(e){toast('存档未能写入：浏览器存储不可用或空间不足。');}};
  $('loadBtn').onclick=()=>{try{const raw=localStorage.getItem(storageKey);if(!raw){toast('还没有存档，先点击“存档”保存一次。');return;}const data=JSON.parse(raw),check=new Garden();check.restore(data);confirmAction('回到保存的花园？','读取前会保留当前世界，之后仍可撤销。','读取存档',()=>{checkpoint();world.restore(data);syncScene();setPaused(true);toast('存档已读取，点击“继续生长”让时间流动。');});}catch(e){toast('无法读取存档：数据损坏或浏览器存储不可用。');}};
