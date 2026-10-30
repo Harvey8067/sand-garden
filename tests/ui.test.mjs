@@ -232,6 +232,15 @@ if (loadError) {
 
   const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 
+  const descendants=(node)=>[node,...node.children.flatMap(descendants)];
+  const prodButton=(ui,key)=>descendants(ui.element('businessBody')).find(n=>n.dataset.prodKey===key);
+  const prodTexts=(ui)=>descendants(ui.element('businessBody')).map(n=>n.textContent).join(' ');
+  describe('经营菜单细节',()=>{
+    test('远处卡片明确禁用原因，菜单不改动世界',()=>{const ui=loadUI(),before=JSON.stringify(ui.api.state());ui.keydown({key:'n'});assert.equal(ui.api.health().menu,'business');assert.equal(prodButton(ui,'feed-buy').disabled,true);assert.match(prodTexts(ui),/前往牧场/);ui.frame(30);assert.equal(JSON.stringify(ui.api.state()),before);});
+    test('喂食操作更新反馈和饲料，保留菜单滚动位置',()=>{const ui=loadUI();Object.assign(ui.game.state.livestock,{coop:true,chickens:2,feed:10});ui.game.state.player={x:2,y:8,facing:'down'};ui.api.openPanel('business');ui.element('inGamePanel').scrollTop=230;const b=prodButton(ui,'feed-animals');assert.equal(b.disabled,false);b.onclick();assert.equal(ui.api.state().livestock.feed,8);assert.equal(ui.api.state().livestock.fedAtDay,1);assert.equal(ui.element('inGamePanel').scrollTop,230);assert.equal(prodButton(ui,'feed-animals').disabled,true);assert.match(prodTexts(ui),/今天已喂饱/);});
+    test('切页键盘支持左右和End，缺原料配方禁用并说明',()=>{const ui=loadUI();ui.game.state.player={x:25,y:10,facing:'down'};ui.game.state.industry.built=true;ui.api.openPanel('business');prodButton(ui,'tab-ranch')._listeners.keydown[0]({key:'ArrowRight',preventDefault(){}});assert.equal(prodButton(ui,'craft-mayo').disabled,true);assert.match(prodTexts(ui),/鸡蛋不足/);prodButton(ui,'tab-workshop')._listeners.keydown[0]({key:'End',preventDefault(){}});assert.ok(prodButton(ui,'helper-waterer'));});
+    test('加工队列显示中文成品名与到期状态',()=>{const ui=loadUI();Object.assign(ui.game.state.industry,{built:true,jobs:[{recipe:'mayo',qty:2,readyDay:1},{recipe:'jam',qty:1,readyDay:3}]});ui.api.openPanel('business');prodButton(ui,'tab-workshop').onclick();const texts=prodTexts(ui);assert.match(texts,/蛋黄酱 × 2/);assert.match(texts,/制作完成/);assert.match(texts,/第 3 天完成/);assert.ok(!texts.includes('mayo ×'));});
+  });
   describe('沉浸式菜单与镜头',()=>{
     test('全屏按钮使用标准浏览器API并支持退出，不强制全屏',async()=>{const ui=loadUI();let entered=0,exited=0;ui.element('gameStage').requestFullscreen=async()=>{entered++;};ui.document.exitFullscreen=async()=>{exited++;};await ui.element('fullscreenBtn').onclick();assert.equal(entered,1);ui.document.fullscreenElement=ui.element('gameStage');await ui.element('fullscreenBtn').onclick();assert.equal(exited,1);});
     test('最南侧田地镜头正确到达视野边界并能点击种植',()=>{const ui=loadUI();ui.game.state.player={x:39,y:25,facing:'down'};ui.api.refresh();const c=ui.api.health().camera;assert.equal(c.x,12);assert.equal(c.y,13.125);ui.pointerDown(39,24);assert.ok(ui.api.state().plots['39,24']);});

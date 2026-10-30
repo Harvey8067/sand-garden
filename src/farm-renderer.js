@@ -1194,38 +1194,51 @@
   }
 
   /* 牧场：围栏 + 小屋（已建鸡舍/牛棚时显示实体，否则显示地基与标牌） */
-  function drawRanch(g, st, t) {
-    var x0 = RANCH_BOX.x0 * TILE, y0 = RANCH_BOX.y0 * TILE;
-    var x1 = (RANCH_BOX.x1 + 1) * TILE, y1 = (RANCH_BOX.y1 + 1) * TILE;
+  /* 牧场：围场只铺在"合法可用地面"上，绝不覆盖老房屋 x3..8,y3..6 与 y8 道路。
+     可用区：A = x3..7,y7（房屋正下方的草地条带），B = x0..3,y9（道路下方）。
+     所有坐标均为整像素，动物被限制在这些矩形内。 */
+  var RANCH_ZONES = {
+    a: { x: 3 * TILE + 2, y: 7 * TILE + 4, w: 5 * TILE - 8, h: TILE - 6 },   /* x3..7, y7 */
+    b: { x: 0 * TILE + 3, y: 9 * TILE + 4, w: 4 * TILE - 6, h: TILE - 6 }    /* x0..3, y9 */
+  };
+
+  function drawRanch(g, st, t, opts) {
+    var freeze = !!(opts && opts.reducedMotion);
     var ps = prodState(st);
-    /* 草地围场（在牧场建筑下方的空地：x0..2 之外铺一圈栏杆） */
-    var fx0 = x0 - 20, fy0 = y0 + 8, fx1 = x1 + 150, fy1 = y1 + 78;
-    px(g, fx0, fy0, fx1 - fx0, fy1 - fy0, 'rgba(150,178,110,0.16)');
+    var built = ps.coop || ps.barn;
+
+    /* 围场地面：只画在两块合法区（低饱和度，不抢建筑） */
+    var za = RANCH_ZONES.a, zb = RANCH_ZONES.b;
+    px(g, za.x, za.y, za.w, za.h, 'rgba(150,178,110,0.20)');
+    px(g, zb.x, zb.y, zb.w, zb.h, 'rgba(150,178,110,0.20)');
+
+    /* 栏杆：区 A 上沿 + 右沿；区 B 下沿（不与道路/房屋相交） */
     g.save();
     g.strokeStyle = 'rgba(140,104,66,0.55)';
     g.lineWidth = 2;
     g.beginPath();
-    g.moveTo(fx0, fy1); g.lineTo(fx0, fy0); g.lineTo(fx1, fy0);
+    g.moveTo(za.x, za.y + 1); g.lineTo(za.x + za.w, za.y + 1);
+    g.moveTo(za.x + za.w, za.y + 1); g.lineTo(za.x + za.w, za.y + za.h);
     g.stroke();
-    setDash(g, [5, 5]);
-    g.strokeStyle = 'rgba(140,104,66,0.25)';
     g.beginPath();
-    g.moveTo(fx0, fy1); g.lineTo(fx1, fy1);
+    g.moveTo(zb.x, zb.y + zb.h - 1); g.lineTo(zb.x + zb.w, zb.y + zb.h - 1);
     g.stroke();
-    setDash(g, []);
     g.restore();
-    /* 栏柱 */
-    for (var pxi = fx0; pxi <= fx1; pxi += 22) {
-      px(g, pxi, fy0 - 2, 3, 8, C.woodDark);
-      px(g, pxi, fy0 - 2, 3, 2, C.woodLight);
+    for (var pxi = za.x; pxi <= za.x + za.w; pxi += 20) {
+      px(g, pxi, za.y - 2, 3, 7, C.woodDark);
+      px(g, pxi, za.y - 2, 3, 2, C.woodLight);
+    }
+    for (var pxj = zb.x; pxj <= zb.x + zb.w; pxj += 20) {
+      px(g, pxj, zb.y + zb.h - 4, 3, 7, C.woodDark);
+      px(g, pxj, zb.y + zb.h - 4, 3, 2, C.woodLight);
     }
 
-    /* 牧场小屋（x0..2,y4..7） */
-    var bx = x0 + 4, by = y0 + 4, bw = x1 - x0 - 8, bh = y1 - y0 - 8;
-    px(g, bx, by + bh * 0.42, bw, bh * 0.58, ps.coop || ps.barn ? '#e8d3ae' : 'rgba(214,198,166,0.55)');
+    /* 牧场小屋（x0..2,y4..7）——保持原位，不被动物遮挡 */
+    var bx = RANCH_BOX.x0 * TILE + 4, by = RANCH_BOX.y0 * TILE + 4;
+    var bw = (RANCH_BOX.x1 - RANCH_BOX.x0 + 1) * TILE - 8, bh = (RANCH_BOX.y1 - RANCH_BOX.y0 + 1) * TILE - 8;
+    px(g, bx, by + bh * 0.42, bw, bh * 0.58, built ? '#e8d3ae' : 'rgba(214,198,166,0.55)');
     px(g, bx, by + bh * 0.42, bw, 3, '#d3b98f');
-    /* 屋顶 */
-    if (ps.coop || ps.barn) {
+    if (built) {
       g.beginPath();
       g.moveTo(bx - 5, by + bh * 0.46);
       g.lineTo(bx + bw * 0.18, by);
@@ -1235,11 +1248,8 @@
       g.fillStyle = '#b98a5c';
       g.fill();
       px(g, bx - 5, by + bh * 0.44, bw + 10, 4, '#9c6f45');
-      for (var rr = 0; rr < 3; rr++) {
-        px(g, bx + 3, by + 8 + rr * 8, bw - 6, 2, 'rgba(140,100,62,0.35)');
-      }
+      for (var rr = 0; rr < 3; rr++) { px(g, bx + 3, by + 8 + rr * 8, bw - 6, 2, 'rgba(140,100,62,0.35)'); }
     } else {
-      /* 未建：地基 + 木料堆 */
       g.save();
       setDash(g, [6, 4]);
       g.strokeStyle = 'rgba(120,96,64,0.55)';
@@ -1250,51 +1260,209 @@
       for (var li = 0; li < 4; li++) { px(g, bx + 12 + li * 5, by + bh * 0.62 + li * 2, 22, 3, C.wood); }
     }
     /* 门 */
-    px(g, bx + bw * 0.42, by + bh * 0.68, 20, bh * 0.32, ps.coop || ps.barn ? '#7c5233' : 'rgba(124,82,51,0.45)');
+    px(g, bx + bw * 0.42, by + bh * 0.68, 20, bh * 0.32, built ? '#7c5233' : 'rgba(124,82,51,0.45)');
     px(g, bx + bw * 0.42, by + bh * 0.68, 20, 2, '#9a6b45');
+    /* 门牌：牧场 */
+    roundRectPath(g, bx + bw * 0.5 - 15, by + bh * 0.30, 30, 12, 3);
+    g.fillStyle = 'rgba(250,244,226,0.9)';
+    g.fill();
+    g.strokeStyle = 'rgba(110,84,52,0.5)';
+    g.lineWidth = 1;
+    g.stroke();
+    g.font = FONT_TINY;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#5c4427';
+    g.fillText('牧场', bx + bw * 0.5, by + bh * 0.30 + 7);
+
     /* 屋内灯（已建且已喂） */
     var fed = num(st && st.livestock && st.livestock.fedAtDay, -1) === num(st && st.day, 1);
-    if ((ps.coop || ps.barn) && fed) {
+    if (built && fed) {
       px(g, bx + 10, by + bh * 0.5, 7, 5, '#ffe6a6');
       blob(g, bx + 13, by + bh * 0.52, 9, 7, 'rgba(255,228,150,0.16)');
     }
 
-    /* 圈里的动物：随数量绘制（同一像素尺度） */
-    drawAnimals(g, ps, fx0 + 26, fy0 + 30, t);
-    /* 待收产物提示 */
-    if (ps.eggs > 0) { bucket(g, fx0 + 12, fy1 - 20, '蛋', ps.eggs, '#f2e4bf'); }
-    if (ps.milk > 0) { bucket(g, fx0 + 52, fy1 - 20, '奶', ps.milk, '#e8f1f4'); }
+    /* 饮水槽：放在区 B 左端（整像素，不越界） */
+    drawTrough(g, zb.x + 2, zb.y + 6, t, freeze);
+
+    /* 草料堆：区 B 右端 */
+    if (ps.feed > 0) { drawFeedPile(g, zb.x + zb.w - 26, zb.y + 8, Math.min(6, ps.feed), t, freeze); }
+
+    /* 圈里的动物（时间驱动，限制在 A/B 区内） */
+    drawAnimals(g, ps, t, freeze, opts);
+
+    /* 待收产物提示：贴在区 A 右上角，不与屋顶重叠 */
+    if (ps.eggs > 0) { bucket(g, za.x + 8, za.y - 26, '蛋', ps.eggs, '#f2e4bf'); }
+    if (ps.milk > 0) { bucket(g, za.x + 42, za.y - 26, '奶', ps.milk, '#e8f1f4'); }
+
+    /* 可选：喂养/收成事件后 2 秒的小反馈（由 UI 传入 view.ranchEvent） */
+    var ev = opts && opts.event;
+    if (ev && typeof ev === 'object' && !freeze) {
+      var at = num(ev.at, NaN);
+      var now = num(opts.now, 0);
+      var age = isFinite(at) ? now - at : Infinity;
+      if (age >= 0 && age < 2000) {
+        var k = age / 2000;
+        if (ev.kind === 'feed') {
+          /* 食槽边散落谷粒，逐渐沉入土里 */
+          for (var gi = 0; gi < 7; gi++) {
+            var gx = zb.x + 6 + ((gi * 5) % 22);
+            var gy = zb.y + 6 - Math.round(k * 2) + (gi % 3) * 2;
+            px(g, gx, gy, 1, 1, gi % 2 ? '#e6c980' : '#d8b96a');
+          }
+          blob(g, zb.x + 13, zb.y + 6, 14, 5, 'rgba(232,214,150,' + (0.22 * (1 - k)).toFixed(3) + ')');
+        } else if (ev.kind === 'collect') {
+          /* 收获星点从桶口升起 */
+          for (var si = 0; si < 5; si++) {
+            var sx = za.x + 12 + si * 7 + Math.round(Math.sin(k * 6 + si) * 2);
+            var sy = za.y - 26 - Math.round(k * 12) - si * 2;
+            sparkle(g, sx, sy, 0.75 * (1 - k));
+          }
+        }
+      }
+    }
   }
 
-  function drawAnimals(g, ps, ox, oy, t) {
-    /* 鸡：最多 6，两列小个头 */
+  /* 饮水槽：静态槽体 + 随时间起伏的细波纹（freeze 时只保留静态水面） */
+  function drawTrough(g, x, y, t, freeze) {
+    px(g, x, y, 26, 12, C.woodDark);
+    px(g, x + 1, y + 1, 24, 10, C.wood);
+    px(g, x + 2, y + 3, 22, 6, C.waterMid);
+    px(g, x + 2, y + 3, 22, 1, C.waterLight);
+    px(g, x, y + 11, 26, 2, C.woodLight);
+    px(g, x + 2, y - 3, 2, 4, C.woodDark);
+    px(g, x + 22, y - 3, 2, 4, C.woodDark);
+    if (freeze) { px(g, x + 8, y + 5, 7, 1, 'rgba(224,246,252,0.45)'); return; }
+    for (var i = 0; i < 3; i++) {
+      var ph = ((t * 0.0006) + i / 3) % 1;
+      var rx = 3 + ph * 8;
+      g.save();
+      g.globalAlpha = (1 - ph) * 0.45;
+      g.strokeStyle = '#e8fbff';
+      g.lineWidth = 1;
+      ellipsePath(g, x + 13, y + 6, rx, rx * 0.42);
+      g.stroke();
+      g.restore();
+    }
+    var sx = x + 4 + Math.round(Math.sin(t * 0.0017) * 3);
+    px(g, sx, y + 5, 4, 1, 'rgba(235,252,255,0.55)');
+  }
+
+  /* 草料：几束干草，随时间轻微起伏（freeze 时静止） */
+  function drawFeedPile(g, x, y, count, t, freeze) {
+    for (var i = 0; i < count; i++) {
+      var ox = x + (i % 3) * 7, oy = y + Math.floor(i / 3) * 5;
+      var sway = freeze ? 0 : Math.round(Math.sin(t * 0.0019 + i * 0.9) * 1);
+      px(g, ox + sway, oy, 2, 6, '#cfae63');
+      px(g, ox + 2 + sway, oy + 1, 2, 5, '#dcbf78');
+      px(g, ox + 4 + sway, oy + 2, 1, 4, '#c2a052');
+    }
+    px(g, x - 1, y + 12, 24, 2, 'rgba(120,94,62,0.25)');
+  }
+
+  /* 动物：位置由 time 决定的确定性轨迹（无随机突跳），全部限制在 A/B 围场内。
+     鸡：啄食 / 小步走 / 眨眼；牛：咀嚼 / 摆尾 / 缓步。reducedMotion 时冻结为静止姿态。 */
+  function animalZones() { return { a: RANCH_ZONES.a, b: RANCH_ZONES.b }; }
+
+  /* 确定性伪随机（同一 index 恒定，不随时跳动） */
+  function tone(i, salt) {
+    var v = Math.sin((i + 1) * 12.9898 + (salt || 0) * 78.233) * 43758.5453;
+    return v - Math.floor(v);
+  }
+
+  /* 在区域内做缓慢往返游走：period 秒级，振幅受限于区域尺寸 */
+  function wander(t, i, zone, padX, padY, periodMs, speedPx) {
+    var baseX = zone.x + padX + tone(i, 1) * Math.max(1, zone.w - padX * 2);
+    var baseY = zone.y + padY + tone(i, 2) * Math.max(1, zone.h - padY * 2);
+    if (speedPx <= 0) { return { x: Math.round(baseX), y: Math.round(baseY), moving: false }; }
+    var ax = Math.round(Math.min(zone.w * 0.22, 10));
+    var ay = Math.round(Math.min(zone.h * 0.5, 4));
+    var ph = (t % periodMs) / periodMs;
+    var wave = Math.sin(ph * Math.PI * 2 + tone(i, 3) * Math.PI * 2);
+    var moving = Math.abs(Math.cos(ph * Math.PI * 2 + tone(i, 3) * Math.PI * 2)) > 0.72;
+    return { x: Math.round(baseX + wave * ax), y: Math.round(baseY + Math.sin(ph * Math.PI * 4) * ay), moving: moving };
+  }
+
+  function drawAnimals(g, ps, t, freeze, opts) {
+    var zones = animalZones();
+    var za = zones.a, zb = zones.b;
+    /* 鸡与牛分处两个区域，避免挤成一团：鸡在 A（房屋下方条带），牛在 B（道路下方） */
+    /* 鸡：可用高度 26px，鸡身含头足约 14px → 纵向仅 ±1px 游走，横向留足间距 */
+    var chickenZone = { x: za.x + 4, y: za.y + 1, w: za.w - 12, h: 2 };
+    /* 牛：区 B 高 26px，牛含头尾约 14px → 纵向 ±1px */
+    var cowZone = { x: zb.x + 22, y: zb.y + 1, w: zb.w - 30, h: 2 };
+
     for (var ci = 0; ci < ps.chickens; ci++) {
-      var cx = ox + (ci % 3) * 20 + (ci >= 3 ? 6 : 0);
-      var cy = oy + Math.floor(ci / 3) * 20;
-      var bob = Math.round(Math.sin(t * 0.004 + ci) * 1);
-      px(g, cx, cy + bob, 8, 6, '#f4f0e2');
-      px(g, cx + 1, cy + 1 + bob, 5, 2, '#fbf8ee');
-      px(g, cx + 6, cy - 2 + bob, 4, 4, '#f4f0e2');
-      px(g, cx + 8, cy - 1 + bob, 2, 1, '#e0a24a');
-      px(g, cx + 9, cy + 1 + bob, 1, 2, '#c9402f');
-      px(g, cx + 6, cy - 2 + bob, 1, 1, '#4a3a2c');
-      px(g, cx + 1, cy + 5 + bob, 1, 2, '#d8a34e');
-      px(g, cx + 5, cy + 5 + bob, 1, 2, '#d8a34e');
+      var p = wander(freeze ? 0 : t, ci * 3 + 1, chickenZone, 6, 3, 9000 + ci * 700, freeze ? 0 : 1);
+      drawChicken(g, p.x, p.y, t, ci, freeze, p.moving);
     }
-    /* 牛：最多 3，个头更大 */
     for (var bi = 0; bi < ps.cows; bi++) {
-      var bx = ox + bi * 34 + 8;
-      var byy = oy + 40 + Math.round(Math.sin(t * 0.0028 + bi * 1.7) * 1);
-      px(g, bx, byy, 18, 10, '#f2ece0');
-      px(g, bx, byy, 18, 3, '#fbf7ee');
-      px(g, bx - 6, byy + 1, 7, 6, '#f2ece0');
-      px(g, bx - 8, byy + 2, 3, 2, '#e0d3c2');
-      px(g, bx + 2, byy + 3, 5, 4, '#5b4636');
-      px(g, bx + 11, byy + 4, 4, 3, '#5b4636');
-      px(g, bx + 3, byy + 9, 2, 4, '#8a7358');
-      px(g, bx + 13, byy + 9, 2, 4, '#8a7358');
-      px(g, bx + 16, byy + 2, 2, 2, '#4a3a2c');
+      var pc = wander(freeze ? 0 : t, bi * 5 + 2, cowZone, 12, 6, 14000 + bi * 1300, freeze ? 0 : 1);
+      drawCow(g, pc.x, pc.y, t, bi, freeze, pc.moving);
     }
+  }
+
+  /* 鸡：8x8 像素体，啄食时低头，小步走时上下微跳 1px（整像素） */
+  function drawChicken(g, x, y, t, i, freeze, moving) {
+    var phase = freeze ? 0 : t * 0.001;                    /* 秒 */
+    var peckCycle = (phase * 0.9 + tone(i, 5) * 6) % 2.2;  /* 0..2.2 */
+    var pecking = !freeze && peckCycle < 0.45;             /* 阶段性啄食 */
+    var hop = (!freeze && moving) ? (Math.round(Math.sin(t * 0.012 + i)) > 0 ? -1 : 0) : 0;
+    var blink = !freeze && ((phase * 1.7 + tone(i, 7) * 10) % 4.0) < 0.16;
+    var by = y + hop;
+
+    /* 影子 */
+    blob(g, x + 4, y + 7, 5, 2, 'rgba(45,38,28,0.16)');
+    /* 身体 */
+    px(g, x, by, 8, 6, '#f4f0e2');
+    px(g, x + 1, by + 1, 5, 2, '#fbf8ee');
+    px(g, x, by + 5, 8, 1, 'rgba(196,186,166,0.55)');
+    /* 头（啄食时下移 2px，整像素） */
+    var headDy = pecking ? 2 : 0;
+    px(g, x + 6, by - 2 + headDy, 4, 4, '#f4f0e2');
+    px(g, x + 8, by - 1 + headDy, 2, 1, '#e0a24a');       /* 喙 */
+    px(g, x + 9, by + 1 + headDy, 1, 2, '#c9402f');       /* 肉冠 */
+    /* 眼（眨眼时 1px 横线） */
+    if (blink) { px(g, x + 6, by - 1 + headDy, 2, 1, '#4a3a2c'); }
+    else { px(g, x + 6, by - 1 + headDy, 1, 1, '#4a3a2c'); }
+    /* 腿 */
+    px(g, x + 1, by + 6, 1, 2, '#d8a34e');
+    px(g, x + 5, by + 6, 1, 2, '#d8a34e');
+    /* 啄食的小土粒 */
+    if (pecking) { px(g, x + 9, y + 7, 1, 1, '#8a6a3c'); }
+  }
+
+  /* 牛：18x14，咀嚼时头部轻微上下，摆尾左右 1px，缓步时整体位移由 wander 提供 */
+  function drawCow(g, x, y, t, i, freeze, moving) {
+    var phase = freeze ? 0 : t * 0.001;
+    var chew = (!freeze && (phase * 1.1 + tone(i, 4) * 5) % 1.6 < 0.8) ? 1 : 0;
+    var tail = freeze ? 0 : Math.round(Math.sin(t * 0.0024 + i * 1.3));
+    var step = (!freeze && moving) ? (Math.round(Math.sin(t * 0.006 + i)) > 0 ? 1 : 0) : 0;
+    var by = y + step;
+
+    blob(g, x + 9, by + 13, 11, 3, 'rgba(45,38,28,0.16)');
+    /* 身体 */
+    px(g, x, by, 18, 10, '#f2ece0');
+    px(g, x, by, 18, 3, '#fbf7ee');
+    px(g, x, by + 9, 18, 1, 'rgba(200,190,172,0.5)');
+    /* 斑块 */
+    px(g, x + 2, by + 3, 5, 4, '#5b4636');
+    px(g, x + 11, by + 4, 4, 3, '#5b4636');
+    /* 头（咀嚼时下移 1px） */
+    var hy = by + 1 + chew;
+    px(g, x - 6, hy + chew, 7, 6, '#f2ece0');
+    px(g, x - 8, hy + 1 + chew, 3, 2, '#e0d3c2');   /* 口鼻 */
+    px(g, x - 7, hy + 3 + chew, 2, 1, '#c9b9a4');
+    px(g, x - 5, hy + chew, 1, 1, '#4a3a2c');       /* 眼 */
+    px(g, x - 6, hy - 2 + chew, 2, 2, '#d8cbb6');   /* 耳/角 */
+    /* 腿 */
+    px(g, x + 3, by + 9, 2, 4, '#8a7358');
+    px(g, x + 13, by + 9, 2, 4, '#8a7358');
+    px(g, x + 3 + step, by + 13, 3, 1, '#6b5a45');
+    px(g, x + 13 - step, by + 13, 3, 1, '#6b5a45');
+    /* 尾巴 */
+    px(g, x + 18 + tail, by + 3, 1, 4, '#c9b9a4');
+    px(g, x + 18 + tail, by + 6, 2, 2, '#8a7358');
   }
 
   /* 小木桶标记待收数量 */
@@ -2125,10 +2293,19 @@
     var g = ctx;
     var st = stateOf(game);
     var v = view || {};
-    var t = num(v.time, 0);
     var rain = isRain(st);
+    var reducedPhase = (v.reducedMotion === true);
+    var nowMs = num(v.time, 0);
+    /* t 是装饰性闲置动作的时钟（reducedMotion 时冻结为固定相位）；
+       rainT 是天气时钟，雨天仍需要落下，不随 reducedMotion 停止。 */
+    var t = reducedPhase ? 0 : nowMs;
+    var rainT = nowMs;
     var locs = locations();
     var cam = cameraOf(v, st);
+    /* 无障碍：reducedMotion 时冻结所有装饰性闲置动作（动物/波纹/树摇/NPC 呼吸等），
+       冻结方式是固定动画相位，而不是随机化，保证画面稳定可预期。 */
+    var reduced = v.reducedMotion === true;
+    if (reduced) { v = Object.assign({}, v, { reducedMotion: true }); }
 
     g.save();
     try { g.imageSmoothingEnabled = false; } catch (e) {}
@@ -2146,7 +2323,7 @@
     }
 
     /* 2) 动态水面 */
-    drawWaterFX(g, t, rain, terrainGrid(game));
+    drawWaterFX(g, rain ? rainT : t, rain, terrainGrid(game));
 
     /* 3) 实体按 y 排序绘制 */
     var items = [];
@@ -2195,7 +2372,7 @@
       } else if (it.k === 'bin') {
         drawBin(g, t);
       } else if (it.k === 'ranch') {
-        drawRanch(g, st, t);
+        drawRanch(g, st, t, { reducedMotion: reducedPhase, event: v.ranchEvent, now: nowMs });
       } else if (it.k === 'workshop') {
         drawWorkshop(g, st, t);
       } else if (it.k === 'guild') {
@@ -2212,7 +2389,7 @@
 
     /* 5) 光照与天气：只覆盖世界，不做全屏压暗（HUD 在 DOM 层，不受影响） */
     drawDaylight(g, st, rain);
-    if (rain) { drawRain(g, t); }
+    if (rain) { drawRain(g, rainT); }
 
     /* 6) 交互提示与文字（世界坐标，随相机一起平移） */
     drawInteractRings(g, st, locs, t);
@@ -2224,7 +2401,7 @@
 
   var FarmRenderer = {
     draw: draw,
-    version: '2.3.0',
+    version: '2.3.1',
     palette: C,
     map: { cols: COLS, rows: ROWS, tile: TILE, width: MAP_W, height: MAP_H },
     farms: FARMS,

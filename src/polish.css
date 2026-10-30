@@ -1,0 +1,77 @@
+/* Original pixel ranch menu: parchment, wood and brass. */
+.prod-inventory-item .prod-thumb{margin:0 auto 5px;width:30px;height:30px;background:none;border:0}
+.prod-inventory-item .prod-thumb svg{width:28px;height:28px}
+#gameStage .in-game-panel{border:2px solid #8b6c43;border-bottom:5px solid #705332;box-shadow:0 5px 0 #142b2455,0 14px 32px #142b2440;scrollbar-color:#b19a6b #eee5cc;scrollbar-width:thin}
+#gameStage .in-game-panel[data-panel="business"]{width:min(570px,calc(100% - 28px))}
+#gameStage .in-game-panel>header{background:linear-gradient(#fcf5e3,#eee1c1);border-bottom:2px solid #cbb58a;padding:12px 16px;z-index:3}
+#gameStage .in-game-panel>header h2{letter-spacing:1px;color:#4d583a;font-size:16px}
+#gameStage .in-game-panel>header h2::before{content:'◆';font-size:11px;color:#aa8548;margin-right:8px}
+#gameStage .in-game-panel>header button{border:1px solid #bda87b;background:#fbf5e4;box-shadow:0 2px 0 #baa175;min-width:32px;min-height:32px}
+#gameStage .in-game-panel[hidden],#gameStage .menu-content[hidden]{display:none!important}
+#gameStage .in-game-panel:not([hidden]){animation:menu-reveal 170ms ease-out both}
+#gameStage .menu-content:not([hidden]):not(#businessPanel){animation:page-reveal 140ms ease-out both}
+#gameStage .in-game-panel button{transition:background-color 120ms,border-color 120ms,box-shadow 120ms,transform 120ms}
+#gameStage .in-game-panel button:active:not(:disabled){transform:translateY(1px);box-shadow:none}
+#gameStage .in-game-panel button:focus-visible{outline:2px solid #507a59;outline-offset:3px}
+#gameStage .in-game-panel .destinations button{background:#f6ecd5;border:1px solid #d2c19b;border-bottom:3px solid #b59d70;text-align:left;padding:10px}
+#gameStage .in-game-panel .destinations button small{display:block;margin-top:3px;color:#7b775d}
+#gameStage .in-game-panel .quest-item{padding:12px;border:1px solid #ddceaa;border-left:3px solid #bb9658;background:#faf4e5;margin:7px 0}
+#gameStage .in-game-panel .quest-item.done{border-left-color:#78986b;background:#edf0df}
+#gameStage .in-game-panel .inventory-item{border:1px solid #dfcfaa;background:#faf2dd;border-bottom:3px solid #d0b78b}
+#gameStage .in-game-panel .seed-choice{border-bottom-width:3px}
+#gameStage .in-game-panel .seed-choice.active{background:#e9edda;border-color:#8da275}
+#gameStage #dialog[open]{animation:page-reveal 150ms ease-out both}
+.business-panel{padding:14px;gap:12px;font-size:12px;background:linear-gradient(145deg,#fbf6e8,#f4ecd8)}
+.business-overview{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#7e7152;font-size:11px;letter-spacing:.6px}
+.prod-wallet{font-variant-numeric:tabular-nums;color:#816321;background:#f4e5bc;border:1px solid #d6c087;border-radius:4px;padding:4px 9px;font-weight:650}
+.business-tabs{gap:5px;padding:5px;background:#e8dec3}
+.business-tab{min-height:40px;font-weight:650;letter-spacing:1px}
+.business-tab[aria-selected="true"]{background:#fdf4d9;box-shadow:0 2px 0 #a8843c,inset 0 1px 0 #fff}
+.business-body{display:flex;flex-direction:column;gap:12px;min-width:0}
+.business-body.is-entering{animation:page-reveal 160ms ease-out both}
+.business-body>.business-head{order:0;margin:2px 0 0}
+.business-body>.business-hint,.business-body>.business-feedback{order:1}
+.business-body>.prod-ranch-scene{order:2}
+.business-body>.prod-grid{order:3}
+.business-body>.prod-queue{order:4}
+.business-body>.business-actions{order:5}
+.business-head>h3{line-height:1.5}.business-head .prod-tag{white-space:nowrap}
+.prod-grid.is-detail{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:stretch}
+.prod-detail{display:flex;align-items:stretch;flex-direction:column;gap:10px;padding:12px;min-width:0;box-shadow:inset 0 1px 0 #fff,0 2px 0 #d8c8a755}
+.prod-card-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.prod-card-heading .prod-body{min-width:90px}.prod-card-heading .prod-tag{margin-left:auto;font-size:10px;max-width:100%}
+.prod-detail .prod-name{font-size:13px;margin:0;white-space:normal;overflow:visible}
+.prod-detail .prod-sub{font-size:11px;line-height:1.6;color:#776e56;white-space:normal}
+.prod-detail .prod-thumb{width:38px;height:38px;border-color:#cfbc91;background:#f2e6c8;filter:none}
+.prod-thumb svg{display:block;width:32px;height:32px;image-rendering:pixelated}
+.prod-detail .prod-price,.prod-detail .prod-stock{font-size:11px;color:#625e43;margin:0;font-variant-numeric:tabular-nums}
+.prod-detail .prod-cost{margin:0;gap:4px;display:flex;flex-wrap:wrap;font-size:10px}
+.prod-cost-item{white-space:normal;overflow-wrap:anywhere}
+.prod-detail .prod-cost-item{padding:3px 5px;font-variant-numeric:tabular-nums}
+.prod-cost-item.is-short{color:#a34f37;background:#f7e3d3}.prod-cost-item.is-ok{color:#5e7049;background:#edf0db}
+.prod-card-actions{display:flex;flex-direction:column;gap:5px;margin-top:auto}
+.prod-card-actions button{width:100%;min-height:38px;padding:7px 8px;font-size:11px;border:1px solid #a89466;border-bottom:3px solid #927544;border-radius:4px;background:#f0e2bd;color:#4e573c}
+.prod-card-actions button.prod-primary{background:#466d4e;color:#fff5d9;border-color:#365a3b;border-bottom-color:#274a32}
+.prod-card-actions button:hover:not(:disabled){background:#fcf0cf}.prod-card-actions button.prod-primary:hover:not(:disabled){background:#537f5d}
+.prod-card-actions button:disabled{opacity:1;color:#948a70;background:#ede7d8;border-color:#d0c5ab;border-bottom-color:#c5b99d;cursor:not-allowed}
+.prod-action-reason{font-size:10px;color:#8d6c4d;line-height:1.5}
+.business-feedback{padding:9px 11px;border:1px solid #bccb9d;border-left:3px solid #668558;background:#edf1de;color:#456443;border-radius:4px;line-height:1.6}
+.business-feedback.is-error{background:#f7e9dc;border-color:#d6b196;color:#985a40}
+.prod-ranch-scene{display:flex;align-items:flex-end;gap:16px;min-height:72px;padding:10px 16px;border:1px solid #c3c79c;border-bottom:4px solid #839b63;background:linear-gradient(#eef0d7 0 65%,#c2d29c 65% 78%,#a5ba82 78%);border-radius:4px;overflow:hidden}
+.prod-scene-label{flex:1;align-self:center;font-size:11px;color:#607044;line-height:1.6}
+.prod-ranch-scene .prod-thumb{border:0;background:none;filter:none}
+.prod-ranch-scene .prod-icon-chicken{animation:hen-forage 5.2s steps(1,end) infinite}
+.prod-ranch-scene .prod-icon-cow{animation:cow-idle 6.4s steps(1,end) infinite;animation-delay:-2.5s}
+.prod-ranch-scene .prod-icon-feed{width:26px;opacity:.85}
+.prod-gauge{height:10px}.prod-job{padding:9px;flex-wrap:wrap;gap:7px}
+.prod-job .prod-thumb{width:28px;height:28px}.prod-job .prod-thumb svg{width:26px;height:26px}.prod-job .prod-tag{white-space:nowrap}
+.business-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:10px;border-top:1px dashed #cbb78d}
+.business-actions .prod-route{min-height:40px;border:1px solid #a58b55;border-bottom:3px solid #8f7445;background:#f5e5bd;font-size:12px;padding:8px 14px;white-space:normal}
+.business-actions>small{color:#8b8063;font-size:10px;text-align:right;line-height:1.5}
+@keyframes menu-reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes page-reveal{from{opacity:.3;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes hen-forage{0%,66%,100%{transform:translate(0,0)}15%,24%{transform:translate(2px,2px)}36%,44%{transform:translate(4px,0)}50%,58%{transform:translate(2px,0)}}
+@keyframes cow-idle{0%,85%,100%{transform:translateY(0)}20%,38%{transform:translateY(1px)}60%,68%{transform:translateY(-1px)}}
+@media(max-width:720px){#gameStage .in-game-panel[data-panel="business"]{width:min(540px,calc(100% - 14px))}.business-panel{padding:11px}.prod-grid.is-detail{gap:8px}.prod-detail{padding:10px}.prod-card-actions button{min-height:44px}}
+@media(max-width:480px){body.menu-expanded .hud-menu{visibility:hidden;pointer-events:none}#gameStage .in-game-panel[data-panel="business"]{top:94px}.prod-grid.is-detail{grid-template-columns:1fr}.prod-detail{padding:12px}.prod-detail .prod-card-heading{flex-wrap:nowrap}.prod-detail .prod-card-heading .prod-tag{white-space:normal;text-align:right}.prod-ranch-scene{gap:7px;padding:10px}.business-actions{align-items:flex-start}.business-actions>small{max-width:105px}}
+@media(prefers-reduced-motion:reduce){#gameStage .in-game-panel,#gameStage .menu-content,#gameStage #dialog,.business-body,.prod-ranch-scene .prod-thumb{animation:none!important}#gameStage .in-game-panel button,.prod-gauge-fill{transition:none!important}}

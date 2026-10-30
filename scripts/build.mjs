@@ -73,6 +73,7 @@ function build() {
       code += String.fromCharCode(10) + readText('src/art-theme.css');
       if (existsSync(resolve(ROOT, 'src/immersive.css'))) code += String.fromCharCode(10) + readText('src/immersive.css');
       if (existsSync(resolve(ROOT, 'src/production.css'))) code += String.fromCharCode(10) + readText('src/production.css');
+      code += String.fromCharCode(10) + readText('src/polish.css');
     }
     if (slot.kind === 'script') {
       if (/<\/script/i.test(code)) throw new Error(slot.source + ' 含有 </script，无法安全内联');
