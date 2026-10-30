@@ -12,17 +12,42 @@
   if (!root) { return; }
 
   /* ==================== 基础常量 ==================== */
-  var TILE = 32, COLS = 30, ROWS = 22;
+  /* 2.2 扩建：世界 42x30（1344x960）。旧 30x22 是新世界的左上角。 */
+  var TILE = 32, COLS = 42, ROWS = 30;
   var MAP_W = COLS * TILE, MAP_H = ROWS * TILE;
+  var LEGACY_COLS = 30, LEGACY_ROWS = 22;   /* 旧区尺寸，仅供兼容判断 */
   var PI2 = Math.PI * 2;
-  var FARM = { x0: 5, y0: 10, x1: 16, y1: 18 };
+
+  /* 两块田（契约）：西田 x5..16 y10..25，东田 x30..39 y10..25 */
+  var FARMS = [
+    { x0: 5, y0: 10, x1: 16, y1: 25, name: '西田' },
+    { x0: 30, y0: 10, x1: 39, y1: 25, name: '东田' }
+  ];
+  var FARM = FARMS[0];  /* 兼容旧引用（边界提示取整体范围时另算） */
+
+  var HOUSE_BOX = { x0: 3, y0: 3, x1: 8, y1: 6 };    /* 保留原位 */
+  var SHOP_BOX = { x0: 20, y0: 3, x1: 26, y1: 6 };   /* 保留原位 */
+  var POND = { cx: 25, cy: 16, rx: 3, ry: 3 };       /* 保留原位 */
 
   var LOC_FALLBACK = {
     home: { x: 6, y: 7, name: '小屋' },
     shop: { x: 23, y: 7, name: '杂货铺' },
     bin: { x: 10, y: 7, name: '出货箱' },
     npc: { x: 20, y: 9, name: '阿禾' },
-    well: { x: 19, y: 12, name: '石井' }
+    well: { x: 19, y: 12, name: '石井' },
+    miller: { x: 31, y: 8, name: '麦叔' },
+    ranger: { x: 36, y: 6, name: '林岚' },
+    miner: { x: 27, y: 26, name: '石川' },
+    florist: { x: 20, y: 26, name: '小葵' }
+  };
+
+  /* 四位新村民的外观/身份（core 的 NPCS 到位后以 core 为准） */
+  var NPC_STYLE_FALLBACK = {
+    npc: { role: '邻居', skin: '#f2cba2', hair: '#6e4a2f', shirt: '#7fae9c', apron: '#e9dcc0', hat: 'straw' },
+    miller: { role: '磨坊主', skin: '#eec39a', hair: '#8a5a34', shirt: '#c8a878', apron: '#efe3cb', hat: 'cap', prop: 'sack' },
+    ranger: { role: '护林人', skin: '#f0c6a0', hair: '#4a5f3c', shirt: '#6d9463', apron: '#5c7a52', hat: 'hood', prop: 'bow' },
+    miner: { role: '矿工', skin: '#dbb287', hair: '#3f3a36', shirt: '#8a7f74', apron: '#6b6158', hat: 'helmet', prop: 'pick' },
+    florist: { role: '花匠', skin: '#f6d3b0', hair: '#a4633f', shirt: '#d98fa8', apron: '#f3e2ea', hat: 'ribbon', prop: 'basket' }
   };
 
   var CROP_FALLBACK = {
@@ -165,14 +190,16 @@
     return y * COLS + x;
   }
 
+  /* 契约布局（core 未提供 tileAt 时使用；与 expansion-contract 一致） */
   function layoutTile(x, y) {
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS) { return 'outside'; }
-    if (x >= 3 && x <= 8 && y >= 3 && y <= 6) { return 'building'; }
-    if (x >= 20 && x <= 26 && y >= 3 && y <= 6) { return 'building'; }
-    var dx = (x + 0.5 - 25) / 3, dy = (y + 0.5 - 16) / 3;
+    if (x >= HOUSE_BOX.x0 && x <= HOUSE_BOX.x1 && y >= HOUSE_BOX.y0 && y <= HOUSE_BOX.y1) { return 'building'; }
+    if (x >= SHOP_BOX.x0 && x <= SHOP_BOX.x1 && y >= SHOP_BOX.y0 && y <= SHOP_BOX.y1) { return 'building'; }
+    var dx = (x + 0.5 - POND.cx) / POND.rx, dy = (y + 0.5 - POND.cy) / POND.ry;
     if (dx * dx + dy * dy <= 1) { return 'water'; }
-    if (y === 8 && x >= 2 && x <= 28) { return 'path'; }
-    if (x === 18 && y >= 8 && y <= 20) { return 'path'; }
+    /* 道路：y8 x2..40，x18 y8..28，x28 y8..28 */
+    if (y === 8 && x >= 2 && x <= 40) { return 'path'; }
+    if ((x === 18 || x === 28) && y >= 8 && y <= 28) { return 'path'; }
     return 'grass';
   }
 
@@ -210,7 +237,33 @@
         if (typeof r === 'boolean') { return r; }
       } catch (e) {}
     }
-    return x >= FARM.x0 && x <= FARM.x1 && y >= FARM.y0 && y <= FARM.y1;
+    for (var i = 0; i < FARMS.length; i++) {
+      var f = FARMS[i];
+      if (x >= f.x0 && x <= f.x1 && y >= f.y0 && y <= f.y1) { return true; }
+    }
+    return false;
+  }
+
+  /* 离目标格最近的田（用于边界提示） */
+  function nearestFarm(x, y) {
+    var best = null, bestD = Infinity;
+    for (var i = 0; i < FARMS.length; i++) {
+      var f = FARMS[i];
+      var dx = x < f.x0 ? f.x0 - x : (x > f.x1 ? x - f.x1 : 0);
+      var dy = y < f.y0 ? f.y0 - y : (y > f.y1 ? y - f.y1 : 0);
+      var d = dx + dy;
+      if (d < bestD) { bestD = d; best = f; }
+    }
+    return best;
+  }
+
+  /* 目标格属于哪块田（用于边界提示），不在田地返回 null */
+  function farmOf(x, y) {
+    for (var i = 0; i < FARMS.length; i++) {
+      var f = FARMS[i];
+      if (x >= f.x0 && x <= f.x1 && y >= f.y0 && y <= f.y1) { return f; }
+    }
+    return null;
   }
 
   function plotAt(st, x, y) {
@@ -239,6 +292,62 @@
     return out;
   }
 
+  /* 可交互村民：npc/miller/ranger/miner/florist（只读 core，回退契约） */
+  var NPC_KEYS = ['npc', 'miller', 'ranger', 'miner', 'florist'];
+  function npcList() {
+    var core = root.FarmCore;
+    var src = (core && core.NPCS) || {};
+    var locs = locations();
+    var out = [];
+    for (var i = 0; i < NPC_KEYS.length; i++) {
+      var id = NPC_KEYS[i];
+      var loc = locs[id];
+      if (!loc) { continue; }
+      var meta = src[id] || {};
+      var style = has(NPC_STYLE_FALLBACK, id) ? NPC_STYLE_FALLBACK[id] : NPC_STYLE_FALLBACK.npc;
+      out.push({
+        id: id,
+        name: String(meta.name || loc.name || ''),
+        role: String(meta.role || style.role || '村民'),
+        color: String(meta.color || ''),
+        x: loc.x, y: loc.y,
+        style: style
+      });
+    }
+    return out;
+  }
+
+  /* 某位 NPC 是否有"可领取"的委托：优先 questStatus()，回退统计比对 */
+  function npcHasReadyQuest(game, st, npcId) {
+    var quests = (root.FarmCore && root.FarmCore.QUESTS) || [];
+    var claimed = Array.isArray(st && st.claimed) ? st.claimed : [];
+    var hasStatus = game && typeof game.questStatus === 'function';
+    for (var i = 0; i < quests.length; i++) {
+      var q = quests[i];
+      if (!q) { continue; }
+      var owner = String(q.npc || 'npc');
+      if (owner !== npcId) { continue; }
+      if (q.id && claimed.indexOf(q.id) !== -1) { continue; }
+      if (hasStatus) {
+        var s = null;
+        try { s = game.questStatus(q.id); } catch (e) { s = null; }
+        if (s && typeof s === 'object') {
+          if (s.claimed) { continue; }
+          if (s.locked) { continue; }
+          if (s.ready) { return true; }
+          continue;
+        }
+      }
+      /* 回退：只看老式统计任务 */
+      var stat = q.stat;
+      if (!stat) { continue; }
+      var stats = (st && st.stats) || {};
+      var have = stat === 'day' ? num(st && st.day, 1) : num(stats[stat], 0);
+      if (have >= num(q.target, 1)) { return true; }
+    }
+    return false;
+  }
+
   function cropDef(id) {
     var core = root.FarmCore;
     var a = (core && core.CROPS && core.CROPS[id]) || null;
@@ -257,21 +366,6 @@
     return num(crop.age, 0) >= days;
   }
 
-  function questReady(st) {
-    var core = root.FarmCore;
-    var quests = (core && core.QUESTS) || [];
-    if (!quests || !quests.length) { return false; }
-    var claimed = Array.isArray(st && st.claimed) ? st.claimed : [];
-    var stats = (st && st.stats) || {};
-    for (var i = 0; i < quests.length; i++) {
-      var q = quests[i];
-      if (!q) { continue; }
-      var met = num(stats[q.stat], 0) >= num(q.target, 1);
-      if (met && claimed.indexOf(q.id) === -1) { return true; }
-    }
-    return false;
-  }
-
   function isRain(st) {
     var w = st && st.weather;
     if (typeof w === 'string') { return /雨|rain|storm|thunder/i.test(w); }
@@ -286,12 +380,21 @@
   }
 
   /* ==================== 障碍物（树/石） ==================== */
+  /* 旧区布景（保留核心 24 个的观感）+ 扩区/外缘可清理资源 */
   var FALLBACK_OBSTACLES = [
     ['tree', 2, 4], ['tree', 2, 6], ['tree', 9, 4], ['tree', 12, 4], ['tree', 16, 4],
-    ['tree', 18, 5], ['tree', 28, 6], ['tree', 2, 12], ['tree', 3, 16], ['tree', 28, 11],
+    ['tree', 18, 5], ['tree', 28, 6], ['tree', 2, 13], ['tree', 3, 16], ['tree', 28, 11],
     ['tree', 9, 20], ['tree', 12, 20], ['tree', 22, 20], ['tree', 27, 2], ['tree', 1, 18],
-    ['rock', 2, 16], ['rock', 27, 20], ['rock', 7, 21], ['rock', 15, 21], ['rock', 29, 14],
-    ['rock', 13, 21], ['rock', 1, 9]
+    ['rock', 2, 16], ['rock', 26, 20], ['rock', 7, 21], ['rock', 15, 21], ['rock', 29, 14],
+    ['rock', 13, 21], ['rock', 1, 9],
+    /* 扩建区（x>=30 或 y>=22），避开道路/田地/地点/池塘 */
+    ['tree', 31, 2], ['tree', 34, 3], ['tree', 38, 2], ['tree', 41, 4], ['tree', 40, 12],
+    ['tree', 41, 16], ['tree', 32, 20], ['tree', 37, 22], ['tree', 41, 24], ['tree', 33, 27],
+    ['tree', 39, 28], ['tree', 22, 28], ['tree', 25, 29], ['tree', 8, 28], ['tree', 13, 29],
+    ['tree', 2, 24], ['tree', 4, 27], ['tree', 29, 29],
+    ['rock', 30, 3], ['rock', 36, 2], ['rock', 40, 8],
+    ['rock', 41, 20], ['rock', 35, 28], ['rock', 30, 26], ['rock', 24, 25], ['rock', 26, 24],
+    ['rock', 11, 26], ['rock', 6, 26], ['rock', 1, 22], ['rock', 21, 29]
   ];
   var obsMemo = typeof WeakMap === 'function' ? new WeakMap() : null;
 
@@ -553,37 +656,40 @@
 
   /* 田地装饰：虚线边界、木桩、木牌 */
   function paintFarmDecor(g) {
-    var x0 = FARM.x0 * TILE, y0 = FARM.y0 * TILE;
-    var x1 = (FARM.x1 + 1) * TILE, y1 = (FARM.y1 + 1) * TILE;
-    g.save();
-    setDash(g, [7, 6]);
-    g.strokeStyle = 'rgba(92,70,44,0.20)';
-    g.lineWidth = 1;
-    g.strokeRect(x0 + 1.5, y0 + 1.5, (x1 - x0) - 3, (y1 - y0) - 3);
-    setDash(g, []);
-    g.restore();
-    /* 四角木桩 */
-    var corners = [[x0 - 3, y0 - 10], [x1 - 3, y0 - 10], [x0 - 3, y1 - 10], [x1 - 3, y1 - 10]];
-    for (var i = 0; i < corners.length; i++) {
-      var cxp = corners[i][0], cyp = corners[i][1];
-      px(g, cxp, cyp, 5, 12, C.woodDark);
-      px(g, cxp, cyp, 5, 2, C.woodLight);
-      px(g, cxp + 1, cyp + 3, 1, 6, 'rgba(60,40,24,0.35)');
+    for (var fi2 = 0; fi2 < FARMS.length; fi2++) {
+      var farm = FARMS[fi2];
+      var x0 = farm.x0 * TILE, y0 = farm.y0 * TILE;
+      var x1 = (farm.x1 + 1) * TILE, y1 = (farm.y1 + 1) * TILE;
+      g.save();
+      setDash(g, [7, 6]);
+      g.strokeStyle = 'rgba(92,70,44,0.20)';
+      g.lineWidth = 1;
+      g.strokeRect(x0 + 1.5, y0 + 1.5, (x1 - x0) - 3, (y1 - y0) - 3);
+      setDash(g, []);
+      g.restore();
+      /* 四角木桩 */
+      var corners = [[x0 - 3, y0 - 10], [x1 - 3, y0 - 10], [x0 - 3, y1 - 10], [x1 - 3, y1 - 10]];
+      for (var i = 0; i < corners.length; i++) {
+        var cxp = corners[i][0], cyp = corners[i][1];
+        px(g, cxp, cyp, 5, 12, C.woodDark);
+        px(g, cxp, cyp, 5, 2, C.woodLight);
+        px(g, cxp + 1, cyp + 3, 1, 6, 'rgba(60,40,24,0.35)');
+      }
+      /* 田地木牌 */
+      var sx = x0 + 6, sy = y0 - 20;
+      px(g, sx, sy + 12, 3, 10, C.woodDark);
+      roundRectPath(g, sx - 4, sy, 42, 16, 3);
+      g.fillStyle = 'rgba(250,244,226,0.95)';
+      g.fill();
+      g.strokeStyle = 'rgba(110,84,52,0.55)';
+      g.lineWidth = 1;
+      g.stroke();
+      g.font = FONT_TINY;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#5c4427';
+      g.fillText(farm.name, sx + 17, sy + 9);
     }
-    /* 田地木牌 */
-    var sx = x0 + 6, sy = y0 - 20;
-    px(g, sx, sy + 12, 3, 10, C.woodDark);
-    roundRectPath(g, sx - 4, sy, 42, 16, 3);
-    g.fillStyle = 'rgba(250,244,226,0.95)';
-    g.fill();
-    g.strokeStyle = 'rgba(110,84,52,0.55)';
-    g.lineWidth = 1;
-    g.stroke();
-    g.font = FONT_TINY;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillStyle = '#5c4427';
-    g.fillText('田地', sx + 17, sy + 9);
   }
 
   function paintDoormat(g, locs) {
@@ -642,10 +748,13 @@
         }
       }
     }
-    /* 农田底色：极淡暖色，帮助辨认可耕种范围 */
-    px(g, FARM.x0 * TILE, FARM.y0 * TILE,
-       (FARM.x1 - FARM.x0 + 1) * TILE, (FARM.y1 - FARM.y0 + 1) * TILE,
-       'rgba(226,214,166,0.10)');
+    /* 农田底色：两块田各铺一层极淡暖色，帮助辨认可耕种范围 */
+    for (var ft = 0; ft < FARMS.length; ft++) {
+      var farmT = FARMS[ft];
+      px(g, farmT.x0 * TILE, farmT.y0 * TILE,
+         (farmT.x1 - farmT.x0 + 1) * TILE, (farmT.y1 - farmT.y0 + 1) * TILE,
+         'rgba(226,214,166,0.10)');
+    }
     /* 池塘水体 */
     paintPond(g, grid);
     /* 耕地（覆盖在草地之上） */
@@ -1078,34 +1187,75 @@
     }
   }
 
-  function drawNPC(g, st, locs, t) {
-    var L = locs.npc;
-    var cx = L.x * TILE + 16;
-    var yb = L.y * TILE + 30 + Math.round(Math.sin(t * 0.0031 + 1.2) * 1);
+  /* 五名村民共用同一套 32px 像素骨架，仅换配色与随身物件 */
+  function drawNPC(g, unit, t) {
+    var s = unit.style || NPC_STYLE_FALLBACK.npc;
+    var id = unit.id;
+    var cx = unit.x * TILE + 16;
+    var yb = unit.y * TILE + 30 + Math.round(Math.sin(t * 0.0031 + unit.x * 0.7) * 1);
+    var skin = s.skin || C.skin;
+    var shirt = s.shirt || C.npcShirt;
+    var apron = s.apron || C.npcApron;
+    var hair = s.hair || '#6e4a2f';
+
     blob(g, cx, yb - 2, 9, 3, 'rgba(52,44,34,0.16)');
-    /* 腿 / 围裙 / 身体 */
-    px(g, cx - 6, yb - 9, 4, 6, '#6b6f8a');
-    px(g, cx + 2, yb - 9, 4, 6, '#5a5e78');
+    /* 腿与鞋（配色跟衣服呼应） */
+    px(g, cx - 6, yb - 9, 4, 6, id === 'florist' ? '#8a6f7f' : '#6b6f8a');
+    px(g, cx + 2, yb - 9, 4, 6, id === 'florist' ? '#79606f' : '#5a5e78');
     px(g, cx - 6, yb - 3, 5, 3, '#4a4038');
     px(g, cx + 1, yb - 3, 5, 3, '#4a4038');
-    px(g, cx - 7, yb - 18, 14, 10, C.npcShirt);
-    px(g, cx - 7, yb - 18, 14, 2, '#95c2b0');
-    px(g, cx - 5, yb - 15, 10, 7, C.npcApron);
-    px(g, cx - 5, yb - 15, 10, 1, '#f4ecd8');
-    px(g, cx - 10, yb - 17, 3, 7, C.skin);
-    px(g, cx + 7, yb - 17, 3, 7, C.skin);
-    /* 头 */
-    px(g, cx - 5, yb - 26, 10, 9, C.skin);
-    px(g, cx - 5, yb - 26, 10, 3, '#6e4a2f');
-    px(g, cx - 5, yb - 24, 2, 5, '#6e4a2f');
-    px(g, cx + 3, yb - 24, 2, 5, '#6e4a2f');
-    /* 草帽 */
-    blob(g, cx, yb - 27, 11, 3.5, C.hat);
-    px(g, cx - 5, yb - 33, 10, 7, C.hat);
-    px(g, cx - 5, yb - 33, 10, 2, '#f8e7b4');
-    px(g, cx - 5, yb - 28, 10, 2, '#c98f5c');
-    /* 表情（眨眼） */
-    var blink = ((t * 0.0012 + 0.6) % 4) < 0.12;
+    /* 身体 + 围裙 */
+    px(g, cx - 7, yb - 18, 14, 10, shirt);
+    px(g, cx - 7, yb - 18, 14, 2, shade(shirt, 1.14));
+    px(g, cx - 7, yb - 10, 14, 2, shade(shirt, 0.86));
+    if (id !== 'ranger') {
+      px(g, cx - 5, yb - 15, 10, 7, apron);
+      px(g, cx - 5, yb - 15, 10, 1, shade(apron, 1.1));
+    } else {
+      /* 护林人：斜挎带 */
+      for (var bs = 0; bs < 8; bs++) { px(g, cx - 5 + bs, yb - 16 + bs, 2, 2, '#4f6b45'); }
+    }
+    px(g, cx - 10, yb - 17, 3, 7, skin);
+    px(g, cx + 7, yb - 17, 3, 7, skin);
+    /* 头与头发 */
+    px(g, cx - 5, yb - 26, 10, 9, skin);
+    px(g, cx - 5, yb - 26, 10, 3, hair);
+    px(g, cx - 5, yb - 24, 2, 5, hair);
+    px(g, cx + 3, yb - 24, 2, 5, hair);
+    /* 帽子 / 头饰 */
+    if (s.hat === 'straw') {
+      blob(g, cx, yb - 27, 11, 3.5, C.hat);
+      px(g, cx - 5, yb - 33, 10, 7, C.hat);
+      px(g, cx - 5, yb - 33, 10, 2, '#f8e7b4');
+      px(g, cx - 5, yb - 28, 10, 2, '#c98f5c');
+    } else if (s.hat === 'cap') {
+      /* 麦叔：磨坊工布帽 + 麦穗 */
+      px(g, cx - 6, yb - 32, 12, 5, '#d9c08a');
+      px(g, cx - 6, yb - 32, 12, 2, '#ead7a8');
+      px(g, cx - 3, yb - 27, 8, 2, '#b79a63');
+      px(g, cx + 5, yb - 30, 3, 4, '#c9a34f');
+    } else if (s.hat === 'hood') {
+      /* 林岚：兜帽 */
+      px(g, cx - 7, yb - 34, 14, 8, '#4f6b45');
+      px(g, cx - 7, yb - 34, 14, 2, '#5f7d53');
+      px(g, cx - 7, yb - 28, 2, 6, '#4f6b45');
+      px(g, cx + 5, yb - 28, 2, 6, '#4f6b45');
+      px(g, cx - 3, yb - 26, 7, 2, '#3f5838');
+    } else if (s.hat === 'helmet') {
+      /* 石川：矿灯头盔 */
+      px(g, cx - 6, yb - 33, 12, 5, '#b9b0a2');
+      px(g, cx - 6, yb - 33, 12, 2, '#cec5b6');
+      px(g, cx - 2, yb - 36, 4, 3, '#8b8378');
+      px(g, cx - 1, yb - 36, 2, 2, '#ffe6a0');
+    } else if (s.hat === 'ribbon') {
+      /* 小葵：发带 + 小花 */
+      px(g, cx - 5, yb - 28, 10, 2, '#e0798f');
+      px(g, cx + 4, yb - 30, 4, 3, '#e88fa3');
+      px(g, cx + 5, yb - 31, 2, 2, '#f6d06a');
+      px(g, cx - 6, yb - 26, 2, 3, hair);
+    }
+    /* 表情（眨眼相位各不相同，避免整齐划一） */
+    var blink = ((t * 0.0012 + unit.x * 0.37) % 4) < 0.12;
     if (blink) {
       px(g, cx - 3, yb - 21, 2, 1, '#4a3a2c');
       px(g, cx + 1, yb - 21, 2, 1, '#4a3a2c');
@@ -1114,11 +1264,50 @@
       px(g, cx + 1, yb - 22, 2, 2, '#4a3a2c');
     }
     px(g, cx - 1, yb - 19, 2, 1, 'rgba(190,120,100,0.5)');
-    /* 手臂挎着的小篮子 */
-    px(g, cx + 7, yb - 11, 8, 6, '#caa06a');
-    px(g, cx + 7, yb - 11, 8, 2, '#e0bd8a');
-    px(g, cx + 9, yb - 14, 2, 3, '#8fa05a');
-    px(g, cx + 12, yb - 15, 2, 4, '#7f9450');
+
+    /* 随身物件：同尺度小道具，区分职业但不写实 */
+    if (id === 'npc') {
+      px(g, cx + 7, yb - 11, 8, 6, '#caa06a');
+      px(g, cx + 7, yb - 11, 8, 2, '#e0bd8a');
+      px(g, cx + 9, yb - 14, 2, 3, '#8fa05a');
+      px(g, cx + 12, yb - 15, 2, 4, '#7f9450');
+    } else if (id === 'miller') {
+      /* 麦袋 */
+      px(g, cx + 8, yb - 12, 8, 8, '#d8c193');
+      px(g, cx + 8, yb - 12, 8, 2, '#e8d6ae');
+      px(g, cx + 9, yb - 13, 6, 2, '#b79a63');
+      px(g, cx + 10, yb - 10, 2, 2, '#c9a34f');
+    } else if (id === 'ranger') {
+      /* 木弓 */
+      px(g, cx + 9, yb - 20, 2, 12, '#8a5f3a');
+      px(g, cx + 8, yb - 18, 1, 8, '#c9a06a');
+      px(g, cx + 11, yb - 18, 1, 8, '#c9a06a');
+      px(g, cx + 10, yb - 20, 2, 2, '#6f8f5c');
+    } else if (id === 'miner') {
+      /* 镐 */
+      px(g, cx + 9, yb - 20, 2, 13, '#8a5f3a');
+      px(g, cx + 6, yb - 21, 9, 2, '#b9c2c0');
+      px(g, cx + 6, yb - 21, 2, 4, '#98a19f');
+      px(g, cx + 13, yb - 21, 2, 4, '#98a19f');
+    } else if (id === 'florist') {
+      /* 花篮 */
+      px(g, cx + 7, yb - 11, 9, 6, '#d3ab77');
+      px(g, cx + 7, yb - 11, 9, 2, '#e6c793');
+      px(g, cx + 8, yb - 15, 2, 4, '#e88fa3');
+      px(g, cx + 11, yb - 16, 2, 5, '#8fbd72');
+      px(g, cx + 14, yb - 15, 2, 4, '#f6d06a');
+      px(g, cx + 9, yb - 16, 2, 2, '#e0798f');
+    }
+  }
+
+  /* 十六进制颜色微调明暗（保持同一色系） */
+  function shade(hex, k) {
+    var h = String(hex || '').replace('#', '');
+    if (h.length === 3) { h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]; }
+    if (h.length !== 6) { return hex; }
+    var r = parseInt(h.slice(0, 2), 16), gg = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    r = clamp(Math.round(r * k), 0, 255); gg = clamp(Math.round(gg * k), 0, 255); b = clamp(Math.round(b * k), 0, 255);
+    return 'rgb(' + r + ',' + gg + ',' + b + ')';
   }
 
   /* ==================== 作物 ==================== */
@@ -1275,9 +1464,10 @@
     g.fillRect(x + size - t, y + size - l, t, l);
   }
 
-  function glowFarmBoundary(g, t) {
-    var x0 = FARM.x0 * TILE + 1, y0 = FARM.y0 * TILE + 1;
-    var x1 = (FARM.x1 + 1) * TILE - 1, y1 = (FARM.y1 + 1) * TILE - 1;
+  function glowFarmBoundary(g, t, farm) {
+    var box = farm || FARM;
+    var x0 = box.x0 * TILE + 1, y0 = box.y0 * TILE + 1;
+    var x1 = (box.x1 + 1) * TILE - 1, y1 = (box.y1 + 1) * TILE - 1;
     g.save();
     setDash(g, [7, 5]);
     g.lineWidth = 2;
@@ -1347,15 +1537,15 @@
     }
 
     if (tool === 'hoe' || tool === 'seed' || tool === 'water' || tool === 'harvest') {
-      if (!ok) { glowFarmBoundary(g, t); }
+      if (!ok) { glowFarmBoundary(g, t, nearestFarm(tx, ty)); }
     }
 
     var info = targetText(game, st, view, tx, ty);
     if (info) {
       var pcx = x + TILE / 2;
       var pcy = y - 6;
-      if (inside) { pill(g, info.text, pcx, pcy, info.tone); }
-      else { pill(g, info.text, clamp(pcx, 60, MAP_W - 60), MAP_H - 26, info.tone); }
+      /* 越界格也钉在目标附近，只做世界内夹取，避免相机平移后文字跑到屏幕边缘 */
+      pill(g, info.text, clamp(pcx, 60, MAP_W - 60), clamp(pcy, 24, MAP_H - 12), info.tone);
     }
   }
 
@@ -1483,21 +1673,28 @@
     }
   }
 
-  function drawLabels(g, st, locs, t) {
+  function drawLabels(g, game, st, locs, t) {
     var p = (st && st.player) || {};
     var near = null;
     for (var k in locs) {
       if (!has(locs, k)) { continue; }
       if (cheb(p.x, p.y, locs[k].x, locs[k].y) <= 1) { near = k; break; }
     }
-    labelPlate(g, locs.home.name, locs.home.x * TILE + 16, 86, near === 'home');
-    labelPlate(g, locs.shop.name, locs.shop.x * TILE + 16, 86, near === 'shop');
-    labelPlate(g, locs.bin.name, locs.bin.x * TILE + 16, 214, near === 'bin');
-    labelPlate(g, locs.npc.name, locs.npc.x * TILE + 16, 266, near === 'npc');
-    labelPlate(g, locs.well.name, locs.well.x * TILE + 16, 360, near === 'well');
+    /* 固定建筑（世界坐标，保留旧位置） */
+    labelPlate(g, locs.home.name, locs.home.x * TILE + 16, HOUSE_BOX.y0 * TILE - 10, near === 'home');
+    labelPlate(g, locs.shop.name, locs.shop.x * TILE + 16, SHOP_BOX.y0 * TILE - 10, near === 'shop');
+    labelPlate(g, locs.bin.name, locs.bin.x * TILE + 16, locs.bin.y * TILE - 10, near === 'bin');
+    labelPlate(g, locs.well.name, locs.well.x * TILE + 16, locs.well.y * TILE - 54, near === 'well');
 
-    if (questReady(st)) {
-      bubble(g, locs.npc.x * TILE + 16 + 12, locs.npc.y * TILE - 6, '!', t);
+    /* 村民：名字 + 角色 + 仅当本人有可领委托时亮"!" */
+    var npcs = npcList();
+    for (var i = 0; i < npcs.length; i++) {
+      var u = npcs[i];
+      var cx = u.x * TILE + 16;
+      labelPlate(g, u.name, cx, u.y * TILE - 22, near === u.id);
+      if (npcHasReadyQuest(game, st, u.id)) {
+        bubble(g, cx + 13, u.y * TILE - 48, '!', t);
+      }
     }
     if (num(st && st.restedAtDay, -1) !== num(st && st.day, 1)) {
       bubble(g, locs.well.x * TILE + 16 + 14, locs.well.y * TILE - 30, '✦', t, true);
@@ -1505,21 +1702,25 @@
   }
 
   /* ==================== 主绘制入口 ==================== */
-  function applyScale(g) {
-    var cv = g.canvas;
-    if (!cv || !(cv.width > 0) || !(cv.height > 0)) { return; }
-    var cw = cv.width, ch = cv.height;
-    if (cw === MAP_W && ch === MAP_H) { return; }
-    var cur = 1;
-    if (typeof g.getTransform === 'function') {
-      try {
-        var tr = g.getTransform();
-        if (tr && typeof tr.a === 'number' && tr.a > 0) { cur = tr.a; }
-      } catch (e) {}
+  /* 相机：格坐标（可为小数），只做平移；视口小于世界时由 canvas 自然裁切。
+     世界固定 42x30 像素尺度，绝不把整张地图缩小塞进画布。 */
+  function cameraOf(view, st) {
+    var cam = view && view.camera;
+    if (cam && typeof cam === 'object') {
+      var cx = num(cam.x, NaN), cy = num(cam.y, NaN);
+      if (isFinite(cx) && isFinite(cy)) { return { x: cx, y: cy }; }
     }
-    var sx = cw / MAP_W, sy = ch / MAP_H;
-    if (!isFinite(sx) || !isFinite(sy) || sx <= 0 || sy <= 0) { return; }
-    g.scale(sx / cur, sy / cur);
+    /* 没有 camera 时（旧调用/首次渲染）居中到玩家，不做缩放 */
+    var p = (st && st.player) || {};
+    return { x: num(p.x, 0) - 15, y: num(p.y, 0) - 11 };
+  }
+
+  /* 当前视口的格数（用于让 HUD 文字贴住可见区域边角） */
+  function viewportTiles(g) {
+    var cv = g && g.canvas;
+    var cw = cv && cv.width > 0 ? cv.width : 960;
+    var ch = cv && cv.height > 0 ? cv.height : 704;
+    return { w: cw / TILE, h: ch / TILE, pw: cw, ph: ch };
   }
 
   function obstacleVariant(o) {
@@ -1534,10 +1735,13 @@
     var t = num(v.time, 0);
     var rain = isRain(st);
     var locs = locations();
+    var cam = cameraOf(v, st);
 
     g.save();
     try { g.imageSmoothingEnabled = false; } catch (e) {}
-    applyScale(g);
+
+    /* 相机：只平移（格坐标），不缩放。视口 960x540/704 由 canvas 裁切。 */
+    g.translate(-Math.round(cam.x * TILE * 100) / 100, -Math.round(cam.y * TILE * 100) / 100);
 
     /* 1) 地面层（有 DOM 时整层缓存，只有耕地/浇水变化才重画） */
     var base = ensureBase(game, st);
@@ -1565,11 +1769,14 @@
       if (!pos) { continue; }
       items.push({ y: pos.y * TILE + 28, k: 'crop', tx: pos.x, ty: pos.y, p: pp });
     }
-    items.push({ y: 224, k: 'house' });
-    items.push({ y: 224, k: 'shop' });
+    items.push({ y: (HOUSE_BOX.y1 + 1) * TILE, k: 'house' });
+    items.push({ y: (SHOP_BOX.y1 + 1) * TILE, k: 'shop' });
     items.push({ y: locs.well.y * TILE + 30, k: 'well' });
     items.push({ y: locs.bin.y * TILE + 30, k: 'bin' });
-    items.push({ y: locs.npc.y * TILE + 30, k: 'npc' });
+    var npcs = npcList();
+    for (var ni = 0; ni < npcs.length; ni++) {
+      items.push({ y: npcs[ni].y * TILE + 30, k: 'npc', u: npcs[ni] });
+    }
     items.push({ y: num(st.player && st.player.y, 8) * TILE + 30, k: 'player' });
     items.sort(function (a, b) { return a.y - b.y; });
 
@@ -1590,7 +1797,7 @@
       } else if (it.k === 'bin') {
         drawBin(g, t);
       } else if (it.k === 'npc') {
-        drawNPC(g, st, locs, t);
+        drawNPC(g, it.u, t);
       } else if (it.k === 'player') {
         drawPlayer(g, st, v, t);
       }
@@ -1599,19 +1806,26 @@
     /* 4) 成熟提示 */
     drawSparkles(g, st, t);
 
-    /* 5) 光照与天气 */
+    /* 5) 光照与天气：只覆盖世界，不做全屏压暗（HUD 在 DOM 层，不受影响） */
     drawDaylight(g, st, rain);
     if (rain) { drawRain(g, t); }
 
-    /* 6) 交互提示与 UI 文字（始终在雨幕之上，保证可读） */
+    /* 6) 交互提示与文字（世界坐标，随相机一起平移） */
     drawInteractRings(g, st, locs, t);
     drawTarget(g, game, st, v, t);
-    drawLabels(g, st, locs, t);
+    drawLabels(g, game, st, locs, t);
 
     g.restore();
   }
 
-  var FarmRenderer = { draw: draw, version: '2.0.0', palette: C, map: { cols: COLS, rows: ROWS, tile: TILE, width: MAP_W, height: MAP_H } };
+  var FarmRenderer = {
+    draw: draw,
+    version: '2.2.0',
+    palette: C,
+    map: { cols: COLS, rows: ROWS, tile: TILE, width: MAP_W, height: MAP_H },
+    farms: FARMS,
+    npcs: NPC_KEYS
+  };
   root.FarmRenderer = FarmRenderer;
   if (typeof module !== 'undefined' && module.exports) {
     try { module.exports = FarmRenderer; } catch (e) {}

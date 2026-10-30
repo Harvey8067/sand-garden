@@ -86,7 +86,7 @@ if (loadError) {
         click() {},
         setPointerCapture() {},
         releasePointerCapture() {},
-        getBoundingClientRect() { return { left: 0, top: 0, right: MAP.cols * TILE, bottom: MAP.rows * TILE, width: MAP.cols * TILE, height: MAP.rows * TILE }; },
+        getBoundingClientRect() { return { left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540 }; },
         getContext() { return makeCtxStub(); },
         showModal() { el.open = true; },
         close() { el.open = false; },
@@ -132,6 +132,8 @@ if (loadError) {
     };
 
     const canvas = element('farm');
+    canvas.width=960;canvas.height=540;
+    canvas.getBoundingClientRect=()=>({left:0,top:0,right:960,bottom:540,width:960,height:540});
 
     const savedStore=new Map(Object.entries(savedEntries));
     const sandbox = {
@@ -168,6 +170,7 @@ if (loadError) {
       api,
       game: api.game,
       savedStore,
+      document,
       element,
       guide: (id) => guideButtons.find((b) => b.dataset.go === id),
       dialogOpen: () => element('dialog').open,
@@ -198,8 +201,8 @@ if (loadError) {
         const prevented = { called: false };
         const event = {
           button: 0,
-          clientX: (tileX + 0.5) * TILE,
-          clientY: (tileY + 0.5) * TILE,
+          clientX: (tileX + 0.5 - api.health().camera.x) * TILE,
+          clientY: (tileY + 0.5 - api.health().camera.y) * TILE,
           preventDefault() { prevented.called = true; },
         };
         for (const fn of handlers) fn(event);
@@ -228,6 +231,14 @@ if (loadError) {
 
   const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 
+  describe('沉浸式菜单与镜头',()=>{
+    test('全屏按钮使用标准浏览器API并支持退出，不强制全屏',async()=>{const ui=loadUI();let entered=0,exited=0;ui.element('gameStage').requestFullscreen=async()=>{entered++;};ui.document.exitFullscreen=async()=>{exited++;};await ui.element('fullscreenBtn').onclick();assert.equal(entered,1);ui.document.fullscreenElement=ui.element('gameStage');await ui.element('fullscreenBtn').onclick();assert.equal(exited,1);});
+    test('最南侧田地镜头正确到达视野边界并能点击种植',()=>{const ui=loadUI();ui.game.state.player={x:39,y:25,facing:'down'};ui.api.refresh();const c=ui.api.health().camera;assert.equal(c.x,12);assert.equal(c.y,13.125);ui.pointerDown(39,24);assert.ok(ui.api.state().plots['39,24']);});
+    test('打开菜单会冻结时间和移动，关闭恢复且保留手动暂停',()=>{const ui=loadUI(),before=JSON.stringify(ui.api.state());ui.api.openPanel('quests');assert.equal(ui.api.health().menu,'quests');ui.keydown({key:'ArrowDown'});ui.frame(50);assert.equal(JSON.stringify(ui.api.state()),before);ui.keydown({key:'Escape'});assert.equal(ui.api.health().menu,null);ui.keydown({key:'ArrowDown'});assert.equal(ui.player().y,9);ui.api.pause(true);ui.api.openPanel('inventory');ui.api.closePanel();assert.equal(ui.api.health().paused,true);});
+    test('Tab/J/M打开对应画面内菜单，快捷键不误触操作',()=>{const ui=loadUI();for(const [key,panel]of [['Tab','inventory'],['j','quests'],['m','village']]){ui.keydown({key});assert.equal(ui.api.health().menu,panel);ui.keydown({key:'Escape'});}ui.keydown({key:'j',ctrlKey:true});assert.equal(ui.api.health().menu,null);});
+    test('扩区镜头移动后点身边格仍操作正确世界坐标',()=>{const ui=loadUI();ui.game.state.player={x:35,y:20,facing:'down'};ui.api.refresh();const c=ui.api.health().camera;assert.ok(c.x>0&&c.y>0);ui.pointerDown(35,21);assert.ok(ui.api.state().plots['35,21']);assert.equal(ui.api.state().plots['23,13'],undefined);});
+    test('新增村民交互只显示其所属任务，不出现NaN进度',()=>{const ui=loadUI();ui.game.state.player={x:31,y:8,facing:'down'};ui.element('interactBtn').onclick();assert.match(ui.dialogTitle(),/麦叔/);const body=ui.element('dialogBody').children[0];assert.equal(body.children.filter(c=>c.className==='shop-row').length,3);for(const row of body.children.filter(c=>c.className==='shop-row')){assert.ok(!row.children[0].children[0].textContent.includes('NaN'));}});
+  });
   describe('UI 装载', () => {
     test('旧2.0农场存档可从封面继续，坏自动存档回退手动存档',()=>{
       const g=new FarmCore.FarmGame();g.state.day=8;g.state.money=345;const record=JSON.stringify({format:'sand-garden-farm',version:2,state:g.snapshot()});

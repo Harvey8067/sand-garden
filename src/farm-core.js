@@ -1,12 +1,18 @@
-/* 栖砂·田园记 v2 — 农场核心规则（纯逻辑，无 DOM、零依赖）
+/* 栖砂·田园记 v2.2 — 农场核心规则（纯逻辑，无 DOM、零依赖）
  *
  * UMD 导出：浏览器下 window/globalThis.FarmCore，Node 下 module.exports。
- * FarmCore = { FarmGame, CROPS, MAP, LOCATIONS, QUESTS, TOOLS }
+ * FarmCore = { FarmGame, CROPS, MAP, LOCATIONS, NPCS, QUESTS, TOOLS }
+ *
+ * 2.2 扩建：地图 42×30（旧世界 30×22 为新世界左上角），西田 + 东田共 352 格，
+ * 五名村民（阿禾 + 麦叔 / 林岚 / 石川 / 小葵）、15 条委托（3 统计 + 12 含交付/前置）。
  *
  * 设计要点：
- * - 所有会改变世界的操作都先完成校验、再一次性落盘；失败时库存、体力、时间、地块全都不动。
+ * - 所有会改变世界的操作都先完成校验、再一次性落盘；失败时库存、体力、时间、地块、材料全都不动。
  * - 天气完全由 (seed, day) 决定，不额外保存 RNG 状态，所以快照/读档后未来的天气依旧一致。
- * - 障碍物（树/石）位置是固定布景，只出现在农田外，且不会封死任何交互点。
+ * - 障碍物（树/石）由确定式算法在外圈草地生成，避开农田/道路/建筑/水面/交互格/出生点，
+ *   并保证所有交互点在布景后仍可从出生点 BFS 到达；清除记录存于 state.cleared。
+ * - 旧版 v2 存档（30×22 世界、旧地块、旧 cleared）可直接读入：地块坐标仍落在西田内，
+ *   cleared 只做地图内坐标校验，历史障碍吞进新田地时放行该条目。
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -17,7 +23,7 @@
 
   // ---------------------------------------------------------------- 常量
 
-  var MAP = { cols: 30, rows: 22, tile: 32 };
+  var MAP = { cols: 42, rows: 30, tile: 32 };
 
   var CROPS = {
     radish: { name: '萝卜', days: 2, seedPrice: 12, sellPrice: 25 },
@@ -32,23 +38,68 @@
     shop: { x: 23, y: 7, name: '杂货铺' },
     bin: { x: 10, y: 7, name: '出货箱' },
     npc: { x: 20, y: 9, name: '阿禾' },
-    well: { x: 19, y: 12, name: '石井' }
+    well: { x: 19, y: 12, name: '石井' },
+    miller: { x: 31, y: 8, name: '麦叔' },
+    ranger: { x: 36, y: 6, name: '林岚' },
+    miner: { x: 27, y: 26, name: '石川' },
+    florist: { x: 20, y: 26, name: '小葵' }
+  };
+
+  var NPCS = {
+    npc: {
+      name: '阿禾', role: '村里的老邻居', color: '#e0a25c', location: 'npc',
+      greeting: '阿禾：「慢慢来，让这片土地和生活一起热闹起来。」'
+    },
+    miller: {
+      name: '麦叔', role: '磨坊主', color: '#c98a3f', location: 'miller',
+      greeting: '麦叔：「磨盘转起来就要粮食。你地里的东西，我都愿意收。」'
+    },
+    ranger: {
+      name: '林岚', role: '护林员', color: '#5f9e6a', location: 'ranger',
+      greeting: '林岚：「林子里的木头和石头，用得上就拿去，别砍光了就行。」'
+    },
+    miner: {
+      name: '石川', role: '矿工', color: '#8b8fa6', location: 'miner',
+      greeting: '石川：「石头是好东西。给我几块像样的，我替你打点家伙。」'
+    },
+    florist: {
+      name: '小葵', role: '花匠', color: '#d9779a', location: 'florist',
+      greeting: '小葵：「花开的时候，整个村子都会亮一点。你愿意帮我装点它吗？」'
+    }
   };
 
   var QUESTS = [
-    { id: 'first-harvest', name: '第一篮收成', stat: 'harvested', target: 4, reward: 60 },
-    { id: 'market-day', name: '田园小生意', stat: 'sold', target: 8, reward: 100 },
-    { id: 'green-fingers', name: '勤劳园丁', stat: 'watered', target: 20, reward: 80 }
+    { id: 'first-harvest', name: '第一篮收成', npc: 'npc', description: '阿禾想看看你第一次的收成。', stat: 'harvested', target: 4, reward: 60 },
+    { id: 'market-day', name: '田园小生意', npc: 'npc', description: '把收成卖到集市，让村子尝到你的手艺。', stat: 'sold', target: 8, reward: 100 },
+    { id: 'green-fingers', name: '勤劳园丁', npc: 'npc', description: '勤浇水，土地才肯长东西。', stat: 'watered', target: 20, reward: 80 },
+
+    { id: 'radish-delivery', name: '新鲜的萝卜', npc: 'miller', description: '麦叔想磨一锅萝卜面，需要 3 个新鲜萝卜。', delivery: { radish: 3 }, target: 3, reward: 90 },
+    { id: 'market-supply', name: '集市供货', npc: 'miller', description: '麦叔托你把 20 份收成卖到集市去。', stat: 'sold', target: 20, reward: 150, requiresQuest: 'radish-delivery' },
+    { id: 'village-trade', name: '村庄生意', npc: 'miller', description: '让村子全年进账 600 金币，账本交给麦叔过目。', stat: 'earned', target: 600, reward: 200, requiresQuest: 'market-supply' },
+
+    { id: 'forest-timber', name: '林间木料', npc: 'ranger', description: '林岚在补一间护林小屋，需要 9 份木头。', delivery: { wood: 9 }, target: 9, reward: 90 },
+    { id: 'forest-gardener', name: '护林园丁', npc: 'ranger', description: '帮林岚把苗圃浇满 80 次水。', stat: 'watered', target: 80, reward: 160, requiresQuest: 'forest-timber' },
+    { id: 'forest-supplies', name: '林间补给', npc: 'ranger', description: '巡山前要带够口粮：4 个胡萝卜、2 个草莓。', delivery: { carrot: 4, berry: 2 }, target: 6, reward: 240, requiresQuest: 'forest-gardener' },
+
+    { id: 'stone-sample', name: '矿石样本', npc: 'miner', description: '石川想看看你的镐子能敲出什么样的石头，交 6 份石料。', delivery: { stone: 6 }, target: 6, reward: 100 },
+    { id: 'workshop-order', name: '工坊订单', npc: 'miner', description: '一笔大订单：12 份石料与 6 份木头。', delivery: { stone: 12, wood: 6 }, target: 18, reward: 220, requiresQuest: 'stone-sample' },
+    { id: 'settled-in', name: '安顿下来', npc: 'miner', description: '住满第 10 天，石川就承认你是村里人了。', stat: 'day', target: 10, reward: 200, requiresQuest: 'workshop-order' },
+
+    { id: 'berry-basket', name: '莓果小篮', npc: 'florist', description: '小葵想用 3 个草莓做一篮甜点。', delivery: { berry: 3 }, target: 3, reward: 160 },
+    { id: 'colorful-harvest', name: '五彩收成', npc: 'florist', description: '凑齐萝卜、胡萝卜和草莓各 2 个，做一束彩色花篮。', delivery: { radish: 2, carrot: 2, berry: 2 }, target: 6, reward: 240, requiresQuest: 'berry-basket' },
+    { id: 'flower-festival', name: '花开时节', npc: 'florist', description: '为花节采收 40 次收成，让村里开满花。', stat: 'harvested', target: 40, reward: 250, requiresQuest: 'colorful-harvest' }
   ];
 
-  // ---------------------------------------------------------------- 地图规则
+  // ---------------------------------------------------------------- 地图规则（2.2）
 
   var HOUSE = { x0: 3, x1: 8, y0: 3, y1: 6 };   // 不可走
   var SHOP = { x0: 20, x1: 26, y0: 3, y1: 6 };  // 不可走
   var POND = { cx: 25, cy: 16, rx: 3, ry: 3 };  // 椭圆池塘，不可走
-  var FARM = { x0: 5, x1: 16, y0: 10, y1: 18 }; // 可开垦
-  var ROAD_H = { y: 8, x0: 2, x1: 28 };
-  var ROAD_V = { x: 18, y0: 8, y1: 20 };
+  var FARM_WEST = { x0: 5, x1: 16, y0: 10, y1: 25 };  // 192 格
+  var FARM_EAST = { x0: 30, x1: 39, y0: 10, y1: 25 }; // 160 格
+  var ROAD_H = { y: 8, x0: 2, x1: 40 };
+  var ROAD_V1 = { x: 18, y0: 8, y1: 28 };
+  var ROAD_V2 = { x: 28, y0: 8, y1: 28 };
 
   var START = { x: 12, y: 8, facing: 'down' };
   var START_DAY_MINUTES = 6 * 60;   // 06:00
@@ -65,19 +116,8 @@
   var UPGRADE_MONEY = 160;
   var UPGRADE_WOOD = 6;
 
-  // 固定布景：只放在农田外的草地上（不含道路、建筑、池塘、交互格与出生点）。
-  var TREE_TILES = [
-    [1, 4], [2, 2], [4, 19], [17, 11], [17, 19], [22, 18],
-    [28, 4], [2, 15], [3, 20], [27, 12], [29, 18], [1, 20]
-  ];
-  var ROCK_TILES = [
-    [3, 9], [19, 7], [10, 20], [14, 21], [26, 20], [29, 15],
-    [1, 10], [18, 2], [24, 10], [12, 2], [8, 21], [21, 21]
-  ];
-
-  var OBSTACLE_TABLE = Object.create(null);
-  TREE_TILES.forEach(function (p) { OBSTACLE_TABLE[p[0] + ',' + p[1]] = 'tree'; });
-  ROCK_TILES.forEach(function (p) { OBSTACLE_TABLE[p[0] + ',' + p[1]] = 'rock'; });
+  var TREE_GOAL = 26;
+  var ROCK_GOAL = 20;
 
   // ---------------------------------------------------------------- 小工具
 
@@ -98,11 +138,22 @@
     var dy = (y - POND.cy) / POND.ry;
     return dx * dx + dy * dy <= 1;
   }
-  function isFarm(x, y) { return x >= FARM.x0 && x <= FARM.x1 && y >= FARM.y0 && y <= FARM.y1; }
+  function inRect(r, x, y) { return x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1; }
+  function isFarm(x, y) { return inRect(FARM_WEST, x, y) || inRect(FARM_EAST, x, y); }
   function isRoad(x, y) {
     if (y === ROAD_H.y && x >= ROAD_H.x0 && x <= ROAD_H.x1) return true;
-    if (x === ROAD_V.x && y >= ROAD_V.y0 && y <= ROAD_V.y1) return true;
+    if (x === ROAD_V1.x && y >= ROAD_V1.y0 && y <= ROAD_V1.y1) return true;
+    if (x === ROAD_V2.x && y >= ROAD_V2.y0 && y <= ROAD_V2.y1) return true;
     return false;
+  }
+
+  // 纯地形判定：建筑 > 水面 > 道路 > 草地（池塘压在 x=28 道路上时以水面为准）
+  function terrainAt(x, y) {
+    if (!inBounds(x, y)) return 'outside';
+    if (isHouse(x, y) || isShop(x, y)) return 'building';
+    if (isPond(x, y)) return 'water';
+    if (isRoad(x, y)) return 'path';
+    return 'grass';
   }
 
   function cheb(ax, ay, bx, by) {
@@ -141,6 +192,132 @@
   function fail(message) { return { ok: false, message: message }; }
 
   var CROP_IDS = Object.keys(CROPS);
+
+  function findQuest(id) {
+    for (var i = 0; i < QUESTS.length; i++) if (QUESTS[i].id === id) return QUESTS[i];
+    return null;
+  }
+
+  function materialName(key) {
+    if (CROPS[key]) return CROPS[key].name;
+    if (key === 'wood') return '木材';
+    if (key === 'stone') return '石料';
+    return key;
+  }
+
+  // 交付材料当前持有量：作物看 bag，木头/石料看对应字段
+  function ownOf(state, key) {
+    if (CROPS[key]) return state.bag[key] || 0;
+    if (key === 'wood') return state.wood || 0;
+    if (key === 'stone') return state.stone || 0;
+    return 0;
+  }
+
+  // ---------------------------------------------------------------- 障碍布景（2.2）
+
+  function isOuterBand(x, y) {
+    if (x <= 2 || x >= MAP.cols - 3) return true;            // 左右外沿
+    if (y <= 2 || y >= MAP.rows - 3) return true;            // 上下外沿
+    if (x >= 17 && x <= 29 && (y <= 12 || y >= 20)) return true; // 两片田之间的中部草地
+    return false;
+  }
+
+  function buildObstacleTable() {
+    var locTiles = Object.create(null);
+    Object.keys(LOCATIONS).forEach(function (id) {
+      var l = LOCATIONS[id];
+      locTiles[l.x + ',' + l.y] = id;
+    });
+
+    var candidates = [];
+    for (var y = 0; y < MAP.rows; y++) {
+      for (var x = 0; x < MAP.cols; x++) {
+        if (!isOuterBand(x, y)) continue;
+        if (terrainAt(x, y) !== 'grass') continue;
+        if (isFarm(x, y)) continue;
+        if (locTiles[x + ',' + y]) continue;
+        if (x === START.x && y === START.y) continue;
+        candidates.push({
+          x: x, y: y,
+          h: hash32((Math.imul(x + 7, 73856093) ^ Math.imul(y + 13, 19349663)) >>> 0)
+        });
+      }
+    }
+    candidates.sort(function (a, b) { return a.h - b.h || a.x - b.x || a.y - b.y; });
+
+    var table = Object.create(null);
+    var occupied = function (x, y) { return table[x + ',' + y]; };
+    var freeNeighbours = function (x, y) {
+      var n = 0;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+        var nx = x + d[0], ny = y + d[1];
+        if (terrainAt(nx, ny) !== 'grass') return;
+        if (occupied(nx, ny)) return;
+        n++;
+      });
+      return n;
+    };
+    // 从出生点 BFS：所有交互点可达，且每个交互点至少有一个可达的可走邻格
+    var reachesAll = function () {
+      var seen = Object.create(null);
+      var queue = [[START.x, START.y]];
+      seen[START.x + ',' + START.y] = true;
+      for (var head = 0; head < queue.length; head++) {
+        var cur = queue[head];
+        for (var k = 0; k < 4; k++) {
+          var d = [[1, 0], [-1, 0], [0, 1], [0, -1]][k];
+          var nx = cur[0] + d[0], ny = cur[1] + d[1], key = nx + ',' + ny;
+          if (!inBounds(nx, ny)) continue;
+          if (seen[key]) continue;
+          var t = terrainAt(nx, ny);
+          if (t === 'building' || t === 'water') continue;
+          if (occupied(nx, ny)) continue;
+          seen[key] = true;
+          queue.push([nx, ny]);
+        }
+      }
+      var ids = Object.keys(LOCATIONS);
+      for (var i = 0; i < ids.length; i++) {
+        var l = LOCATIONS[ids[i]];
+        var adj = false;
+        for (var k2 = 0; k2 < 4; k2++) {
+          var d2 = [[1, 0], [-1, 0], [0, 1], [0, -1]][k2];
+          if (seen[(l.x + d2[0]) + ',' + (l.y + d2[1])]) { adj = true; break; }
+        }
+        if (!adj) return false;
+      }
+      return true;
+    };
+
+    var trees = 0, rocks = 0;
+    for (var i = 0; i < candidates.length; i++) {
+      if (trees >= TREE_GOAL && rocks >= ROCK_GOAL) break;
+      var c = candidates[i];
+      var type;
+      if (trees < TREE_GOAL && (rocks >= ROCK_GOAL || trees <= rocks)) type = 'tree';
+      else if (rocks < ROCK_GOAL) type = 'rock';
+      else continue;
+      if (freeNeighbours(c.x, c.y) < 2) continue;
+      var key = c.x + ',' + c.y;
+      table[key] = type;
+      if (!reachesAll()) { delete table[key]; continue; }
+      if (type === 'tree') trees++; else rocks++;
+    }
+
+    // 收尾：任何障碍都至少保留两个可站立的相邻格
+    var changed = true;
+    while (changed) {
+      changed = false;
+      Object.keys(table).forEach(function (key) {
+        var parts = key.split(',');
+        var x = parseInt(parts[0], 10), y = parseInt(parts[1], 10);
+        if (freeNeighbours(x, y) < 2) { delete table[key]; changed = true; }
+      });
+    }
+    return table;
+  }
+
+  var OBSTACLE_TABLE = buildObstacleTable();
 
   // ---------------------------------------------------------------- 存档校验
 
@@ -193,7 +370,7 @@
 
     if (!Array.isArray(data.claimed)) throw saveError('claimed 必须是数组。');
     data.claimed.forEach(function (id) {
-      if (!QUESTS.some(function (q) { return q.id === id; })) throw saveError('claimed 里含未知委托：' + id);
+      if (!findQuest(id)) throw saveError('claimed 里含未知委托：' + id);
     });
 
     if (!isInt(data.restedAtDay) || data.restedAtDay < 0 || data.restedAtDay > 1000000000) throw saveError('restedAtDay 必须是非负整数。');
@@ -208,7 +385,8 @@
     if (FACINGS.indexOf(data.player.facing) < 0) throw saveError('player.facing 必须是 up/down/left/right。');
   }
 
-  // cleared 只存地图内的 "x,y"，不强制是固定布景（版本演进时更宽容）。
+  // cleared 只存地图内的 "x,y"，不强制是固定布景（版本演进时更宽容）：
+  // 旧 30×22 存档里的历史障碍坐标即使现在落在新田地上，也照常放行。
   function parsePlotKeyLike(key) {
     var m = /^(\d{1,2}),(\d{1,2})$/.exec(String(key));
     if (!m) return false;
@@ -296,11 +474,7 @@
   // ---- 只读查询
 
   FarmGame.prototype.tileAt = function (x, y) {
-    if (!inBounds(x, y)) return 'outside';
-    if (isHouse(x, y) || isShop(x, y)) return 'building';
-    if (isPond(x, y)) return 'water';
-    if (isRoad(x, y)) return 'path';
-    return 'grass';
+    return terrainAt(x, y);
   };
 
   FarmGame.prototype.isFarmTile = function (x, y) {
@@ -491,11 +665,13 @@
   FarmGame.prototype.interact = function () {
     var loc = this.nearby();
     if (!loc) return { ok: false, message: '附近没有可以互动的东西。', kind: null };
+    if (NPCS[loc.id]) {
+      return { ok: true, message: NPCS[loc.id].greeting, kind: 'npc', npcId: loc.id };
+    }
     var text = {
       home: '小屋的门虚掩着，在这里可以睡觉结束这一天。',
       shop: '杂货铺里飘着种子和木料的香气，可以买种子、升级洒水壶。',
       bin: '出货箱张着盖子，把背包里的作物放进去就能换成金币。',
-      npc: '阿禾正在等你带收成回来，完成委托能领到报酬。',
       well: '石井的水很凉，累了可以在这里歇一会儿（每天一次）。'
     };
     return { ok: true, message: text[loc.id] || ('这里是' + loc.name + '。'), kind: loc.id };
@@ -577,15 +753,86 @@
     return ok('卖出 ' + sold + ' 个作物，赚到 ' + earned + ' 金币。');
   };
 
+  // ---- 委托进度与交付
+
+  FarmGame.prototype.questStatus = function (id) {
+    var quest = findQuest(id);
+    if (!quest) return null;
+    var st = this.state;
+    var claimed = st.claimed.indexOf(id) >= 0;
+    var locked = !!quest.requiresQuest && st.claimed.indexOf(quest.requiresQuest) < 0;
+
+    var progress = 0;
+    if (quest.delivery) {
+      Object.keys(quest.delivery).forEach(function (k) {
+        progress += Math.min(ownOf(st, k), quest.delivery[k]);
+      });
+    } else if (quest.stat === 'day') {
+      progress = st.day;
+    } else {
+      progress = st.stats[quest.stat] || 0;
+    }
+
+    var target = quest.target;
+    var ready = !claimed && !locked && progress >= target;
+    var delivery = null;
+    if (quest.delivery) {
+      delivery = {};
+      Object.keys(quest.delivery).forEach(function (k) { delivery[k] = quest.delivery[k]; });
+    }
+    return {
+      progress: progress,
+      target: target,
+      ready: ready,
+      claimed: claimed,
+      locked: locked,
+      npc: quest.npc,
+      delivery: delivery
+    };
+  };
+
   FarmGame.prototype.claimQuest = function (id) {
-    if (!this._near('npc')) return fail('要走到阿禾身边才能交委托。');
-    var quest = null;
-    for (var i = 0; i < QUESTS.length; i++) if (QUESTS[i].id === id) quest = QUESTS[i];
+    var quest = findQuest(id);
     if (!quest) return fail('没有这个委托：' + id + '。');
+    var npcLoc = LOCATIONS[quest.npc];
+    if (!npcLoc) return fail('这个委托暂时没人能接。');
+    if (!this._near(quest.npc)) return fail('要走到' + npcLoc.name + '身边才能交委托。');
     if (this.state.claimed.indexOf(id) >= 0) return fail('这个委托的奖励已经领过了。');
-    var progress = this.state.stats[quest.stat] || 0;
-    if (progress < quest.target) {
-      return fail('「' + quest.name + '」还差一点：' + progress + '/' + quest.target + '。');
+    if (quest.requiresQuest) {
+      var pre = findQuest(quest.requiresQuest);
+      if (this.state.claimed.indexOf(quest.requiresQuest) < 0) {
+        return fail('要先完成「' + (pre ? pre.name : quest.requiresQuest) + '」才能接这件委托。');
+      }
+    }
+
+    // 逐项复核交付材料（校验阶段只读，不做任何扣减）
+    if (quest.delivery) {
+      var missing = [];
+      var ids = Object.keys(quest.delivery);
+      for (var i = 0; i < ids.length; i++) {
+        var k = ids[i];
+        var need = quest.delivery[k];
+        var own = ownOf(this.state, k);
+        if (own < need) missing.push(materialName(k) + ' ' + own + '/' + need);
+      }
+      if (missing.length) return fail('材料还不够：' + missing.join('、') + '。');
+    } else {
+      var status = this.questStatus(id);
+      if (!status.ready) {
+        return fail('「' + quest.name + '」还差一点：' + status.progress + '/' + status.target + '。');
+      }
+    }
+
+    // 校验全部通过后一次性扣资源、发钱、记领取（任何失败都已提前返回）
+    if (quest.delivery) {
+      var keys = Object.keys(quest.delivery);
+      for (var j = 0; j < keys.length; j++) {
+        var key = keys[j];
+        var amount = quest.delivery[key];
+        if (CROPS[key]) this.state.bag[key] -= amount;
+        else if (key === 'wood') this.state.wood -= amount;
+        else if (key === 'stone') this.state.stone -= amount;
+      }
     }
     this.state.claimed.push(id);
     this.state.money += quest.reward;
@@ -633,6 +880,7 @@
     CROPS: CROPS,
     MAP: MAP,
     LOCATIONS: LOCATIONS,
+    NPCS: NPCS,
     QUESTS: QUESTS,
     TOOLS: TOOLS
   };

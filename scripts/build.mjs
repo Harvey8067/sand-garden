@@ -70,6 +70,7 @@ function build() {
     let code = readText(slot.source);
     if (slot.kind === 'style' && existsSync(resolve(ROOT, 'src/art-theme.css'))) {
       code += String.fromCharCode(10) + readText('src/art-theme.css');
+      if (existsSync(resolve(ROOT, 'src/immersive.css'))) code += String.fromCharCode(10) + readText('src/immersive.css');
     }
     if (slot.kind === 'script') {
       if (/<\/script/i.test(code)) throw new Error(slot.source + ' 含有 </script，无法安全内联');
@@ -102,12 +103,12 @@ function selfCheck(html, sources) {
   if (leftover) fail('[1] 产物仍有占位符残留：' + [...new Set(leftover)].join(', '));
   else ok('[1] 无占位符残留（4 个槽位全部替换）');
 
-  // [2] canvas 尺寸 960x704
+  // [2] canvas 尺寸 960x540
   const canvasTags = html.match(/<canvas\b[^>]*>/gi) || [];
   const canvasOK = canvasTags.length === 1 &&
-    /\bwidth="960"/.test(canvasTags[0]) && /\bheight="704"/.test(canvasTags[0]);
-  if (!canvasOK) fail('[2] canvas 应恰好 1 个且为 960x704，实际：' + (canvasTags.join(' | ') || '(无)'));
-  else ok('[2] canvas 为 width="960" height="704"');
+    /\bwidth="960"/.test(canvasTags[0]) && /\bheight="540"/.test(canvasTags[0]);
+  if (!canvasOK) fail('[2] canvas 应恰好 1 个且为 960x540，实际：' + (canvasTags.join(' | ') || '(无)'));
+  else ok('[2] canvas 为 width="960" height="540"');
 
   // [3] 脚本顺序 style -> core -> renderer -> ui
   const positions = {};

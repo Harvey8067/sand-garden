@@ -96,7 +96,7 @@ if (loadError) {
     throw new Error('找不到 (' + tx + ',' + ty + ') 旁边可站立的位置');
   };
 
-  // 固定的农田测试格（契约固定农田为 x5..16,y10..18，且障碍只在农田外）
+  // 固定的农田测试格（2.2：西田 x5..16,y10..25，东田 x30..39,y10..25；障碍不生成在农田上）
   const TILE_A = { x: 10, y: 12 };
   const DAY1_TILES = [[9, 12], [10, 12], [11, 12], [10, 11], [10, 13], [9, 11]];
   const CROSS_CENTER = { x: 13, y: 14 };
@@ -176,12 +176,13 @@ if (loadError) {
   // ---------- 用例 ----------
   describe('模块与静态约定', () => {
     test('UMD 导出 FarmCore 且常量符合约定', () => {
-      for (const key of ['FarmGame', 'CROPS', 'MAP', 'LOCATIONS', 'QUESTS', 'TOOLS']) {
+      for (const key of ['FarmGame', 'CROPS', 'MAP', 'LOCATIONS', 'QUESTS', 'TOOLS', 'NPCS']) {
         assert.ok(FarmCore[key] != null, '缺少导出 ' + key);
       }
       assert.equal(typeof FarmGame, 'function');
-      assert.equal(MAP.cols, 30);
-      assert.equal(MAP.rows, 22);
+      // 2.2 扩建：42×30，每格 32px；旧世界 30×22 是新世界左上角
+      assert.equal(MAP.cols, 42);
+      assert.equal(MAP.rows, 30);
       assert.equal(MAP.tile, 32);
 
       const cropSpec = {
@@ -204,7 +205,7 @@ if (loadError) {
         assert.equal(got.name, spec.name, id + '.name');
       }
 
-      assert.equal(QUESTS.length, 3, '应有三条委托');
+      assert.equal(QUESTS.length, 15, '2.2 应有 15 条委托（旧 3 + 四名新 NPC 各 3）');
       const questSpec = {
         'first-harvest': { stat: 'harvested', target: 4, reward: 60 },
         'market-day': { stat: 'sold', target: 8, reward: 100 },
@@ -257,8 +258,11 @@ if (loadError) {
 
       assert.equal(g.isFarmTile(10, 12), true);
       assert.equal(g.isFarmTile(4, 12), false);
-      assert.equal(g.isFarmTile(10, 19), false);
       assert.equal(g.isFarmTile(10, 9), false);
+      // 2.2：西田扩到 y10..25，因此 (10,19) 现在属于农田；东田在 x30..39
+      assert.equal(g.isFarmTile(10, 19), true, '(10,19) 应属于扩建后的西田');
+      assert.equal(g.isFarmTile(10, 26), false, 'y26 已超出西田');
+      assert.equal(g.isFarmTile(35, 12), true, '(35,12) 应属于东田');
 
       assert.equal(g.isWalkable(5, 4), false, '建筑不可走');
       assert.equal(g.isWalkable(25, 16), false, '水面不可走');
