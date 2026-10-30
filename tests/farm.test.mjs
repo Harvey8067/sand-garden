@@ -102,19 +102,32 @@ if (loadError) {
   const CROSS_CENTER = { x: 13, y: 14 };
   const CROSS_TILES = [[13, 13], [12, 14], [13, 14], [14, 14], [13, 15]];
 
+  // 把一块地浇到「湿」为止：本来湿的地块重复浇水会零消耗地返回失败，这是正确行为
+  const ensureWatered = (g, x, y, cropId = 'radish') => {
+    standAdjacentTo(g, x, y);
+    const energy = g.state.energy;
+    const wateredStat = g.state.stats.watered;
+    const already = plotAt(g, x, y).watered;
+    const r = g.use('water', cropId, x, y);
+    if (already) {
+      assert.equal(r.ok, false, '(' + x + ',' + y + ') 已湿，重复浇水应被拒绝');
+      assert.equal(g.state.energy, energy, '重复浇水不应消耗体力');
+      assert.equal(g.state.stats.watered, wateredStat, '重复浇水不应重复统计 watered');
+    } else {
+      assert.equal(r.ok, true, '浇水 (' + x + ',' + y + ') 应成功');
+    }
+    assert.equal(plotAt(g, x, y).watered, true, '(' + x + ',' + y + ') 最终应是湿的');
+  };
   const plantAll = (g, tiles, cropId = 'radish') => {
     for (const [x, y] of tiles) {
       standAdjacentTo(g, x, y);
       assert.equal(g.use('hoe', cropId, x, y).ok, true, '开垦 (' + x + ',' + y + ') 应成功');
       assert.equal(g.use('seed', cropId, x, y).ok, true, '播种 (' + x + ',' + y + ') 应成功');
-      assert.equal(g.use('water', cropId, x, y).ok, true, '浇水 (' + x + ',' + y + ') 应成功');
+      ensureWatered(g, x, y, cropId);
     }
   };
   const waterAll = (g, tiles, cropId = 'radish') => {
-    for (const [x, y] of tiles) {
-      standAdjacentTo(g, x, y);
-      assert.equal(g.use('water', cropId, x, y).ok, true, '浇水 (' + x + ',' + y + ') 应成功');
-    }
+    for (const [x, y] of tiles) ensureWatered(g, x, y, cropId);
   };
   const harvestAll = (g, tiles, cropId = 'radish') => {
     for (const [x, y] of tiles) {
@@ -372,8 +385,7 @@ if (loadError) {
       assert.deepEqual({ id: plotAt(g, x, y).crop.id, age: plotAt(g, x, y).crop.age }, { id: 'radish', age: 0 });
       assert.equal(g.state.seeds.radish, seedsBeforeSowing - 1, '播种应扣 1 个种子');
 
-      assert.equal(g.use('water', 'radish', x, y).ok, true);
-      assert.equal(plotAt(g, x, y).watered, true);
+      ensureWatered(g, x, y);
 
       standNear(g, 'home');
       const day0 = g.state.day;
@@ -385,8 +397,7 @@ if (loadError) {
       assert.equal(plotAt(g, x, y).crop.age, 1);
 
       // 第二天再浇水再睡：萝卜 2 天成熟
-      standAdjacentTo(g, x, y);
-      assert.equal(g.use('water', 'radish', x, y).ok, true);
+      ensureWatered(g, x, y);
       standNear(g, 'home');
       assert.equal(g.sleep().ok, true);
       assert.ok(plotAt(g, x, y).crop.age >= CROPS.radish.days, '两天后应成熟');
@@ -497,8 +508,7 @@ if (loadError) {
       standAdjacentTo(g, x, y);
       assert.equal(g.use('hoe', 'radish', x, y).ok, true);
       assert.equal(g.use('seed', 'radish', x, y).ok, true);
-      assert.equal(g.use('water', 'radish', x, y).ok, true);
-      assert.equal(plotAt(g, x, y).watered, true);
+      ensureWatered(g, x, y);
 
       g.state.energy = 20;
       standNear(g, 'home');
@@ -655,6 +665,173 @@ if (loadError) {
     });
   });
 
+  describe('经济与委托补充覆盖', () => {
+    test('批量买 5 份种子按单价乘数量扣款', () => {
+      const g = newGame();
+      standNear(g, 'shop');
+      const money = g.state.money;
+      const seedsRadish = g.state.seeds.radish;
+      const seedsCarrot = g.state.seeds.carrot;
+
+      const radish = g.buy('radish', 5);
+      assert.equal(radish.ok, true);
+      assert.equal(g.state.money, money - CROPS.radish.seedPrice * 5);
+      assert.equal(g.state.seeds.radish, seedsRadish + 5);
+
+      const moneyAfterRadish = g.state.money;
+      const carrot = g.buy('carrot', 2);
+      assert.equal(carrot.ok, true);
+      assert.equal(g.state.money, moneyAfterRadish - CROPS.carrot.seedPrice * 2);
+      assert.equal(g.state.seeds.carrot, seedsCarrot + 2);
+      assert.ok(g.state.money >= 0);
+    });
+
+    test('余额不够买 5 份时整笔拒绝，钱和种子都不变', () => {
+      const g = newGame();
+      standNear(g, 'shop');
+      // 100 G 只够 4 份草莓（30×4=120 已超出），买 5 份必然失败
+      const before = JSON.stringify(g.state);
+      const r = g.buy('berry', 5);
+      assert.equal(r.ok, false, '余额不足应整笔拒绝');
+      assert.equal(typeof r.message, 'string');
+      assert.equal(JSON.stringify(g.state), before, '失败的批量购买不应留下任何部分扣款或部分加种');
+      assert.equal(g.state.money, 100);
+      assert.equal(g.state.seeds.berry, 0);
+    });
+
+    test('三条委托满足后各领一次，重复领取全部被拒', () => {
+      const g = newGame();
+      standNear(g, 'npc');
+
+      const quests = [
+        ['first-harvest', 'harvested', 4, 60],
+        ['market-day', 'sold', 8, 100],
+        ['green-fingers', 'watered', 20, 80],
+      ];
+
+      // 先确认未达成时一律拒绝
+      for (const [id] of quests) {
+        const r = g.claimQuest(id);
+        assert.equal(r.ok, false, id + ' 未达成时不应发奖');
+      }
+      assert.deepEqual([...g.state.claimed], []);
+
+      // 构造统计（测试允许直接构造，避免为了凑数字写镜像实现）
+      for (const [, stat, target] of quests) g.state.stats[stat] = target;
+
+      for (const [id, , , reward] of quests) {
+        const money = g.state.money;
+        const r = g.claimQuest(id);
+        assert.equal(r.ok, true, id + ' 达成后应可领取');
+        assert.equal(g.state.money, money + reward, id + ' 奖励金额');
+        assert.equal(g.state.claimed.filter((q) => q === id).length, 1);
+      }
+
+      // 再来一遍：全部应被拒绝，且总额不变
+      const moneyAfterAll = g.state.money;
+      for (const [id] of quests) {
+        const again = g.claimQuest(id);
+        assert.equal(again.ok, false, id + ' 不能重复领取');
+      }
+      assert.equal(g.state.money, moneyAfterAll, '重复领取不应再加钱');
+      assert.equal(new Set(g.state.claimed).size, 3);
+    });
+  });
+
+  describe('存档兼容与睡眠总结', () => {
+    test('2.0 存档快照可以被新游戏 restore 完整读回', () => {
+      const source = newGame();
+      // 造一点真实进度：买种、开垦、播种、浇水
+      standNear(source, 'shop');
+      assert.equal(source.buy('radish', 1).ok, true);
+      standAdjacentTo(source, TILE_A.x, TILE_A.y);
+      assert.equal(source.use('hoe', 'radish', TILE_A.x, TILE_A.y).ok, true);
+      assert.equal(source.use('seed', 'radish', TILE_A.x, TILE_A.y).ok, true);
+      ensureWatered(source, TILE_A.x, TILE_A.y);
+
+      const save = source.snapshot();
+      assert.equal(save.version, 2, '当前存档格式就是 2.0');
+
+      const restored = newGame(1); // 换一个种子构造新游戏
+      assert.doesNotThrow(() => restored.restore(save), '2.0 存档应能被 restore 接受');
+      assert.equal(JSON.stringify(restored.snapshot()), JSON.stringify(save), '读回后的状态应与存档完全一致');
+      assert.equal(restored.state.money, save.money);
+      assert.equal(restored.state.day, save.day);
+      assert.equal(Object.keys(restored.state.plots).length, Object.keys(save.plots).length);
+
+      // 读回后还能继续正常玩：睡一觉
+      standNear(restored, 'home');
+      assert.equal(restored.sleep().ok, true);
+      assert.equal(restored.state.day, save.day + 1);
+    });
+
+    test('sleep 的 summary.grown/day/weather 与实际状态一致', () => {
+      const g = newGame();
+      // 两块地：一块浇水会生长，一块不浇水不生长
+      standAdjacentTo(g, TILE_A.x, TILE_A.y);
+      assert.equal(g.use('hoe', 'radish', TILE_A.x, TILE_A.y).ok, true);
+      assert.equal(g.use('seed', 'radish', TILE_A.x, TILE_A.y).ok, true);
+      ensureWatered(g, TILE_A.x, TILE_A.y);
+
+      const dry = { x: 11, y: 12 };
+      standAdjacentTo(g, dry.x, dry.y);
+      assert.equal(g.use('hoe', 'radish', dry.x, dry.y).ok, true);
+      assert.equal(g.use('seed', 'radish', dry.x, dry.y).ok, true);
+      if (plotAt(g, dry.x, dry.y).watered) plotAt(g, dry.x, dry.y).watered = false; // 雨天造出干旱对照
+
+      const wetAgeBefore = plotAt(g, TILE_A.x, TILE_A.y).crop.age;
+      const dryAgeBefore = plotAt(g, dry.x, dry.y).crop.age;
+      const dayBefore = g.state.day;
+
+      standNear(g, 'home');
+      const r = g.sleep();
+      assert.equal(r.ok, true);
+      assert.ok(r.summary && typeof r.summary === 'object', 'sleep 应返回 summary');
+
+      assert.equal(r.summary.day, g.state.day, 'summary.day 应等于新的一天');
+      assert.equal(r.summary.day, dayBefore + 1);
+      assert.equal(r.summary.weather, g.state.weather, 'summary.weather 应等于新一天的实际天气');
+      assert.ok(['sunny', 'rainy'].includes(r.summary.weather));
+
+      assert.equal(plotAt(g, TILE_A.x, TILE_A.y).crop.age, wetAgeBefore + 1, '浇过水的那块应长一天');
+      assert.equal(plotAt(g, dry.x, dry.y).crop.age, dryAgeBefore, '没浇水的对照块不应生长');
+      assert.equal(r.summary.grown, 1, 'summary.grown 应等于实际生长的株数');
+      assert.equal(g.state.day, dayBefore + 1);
+    });
+
+    test('已湿土地重复浇水被拒绝，且不消耗体力、不重复统计 watered', () => {
+      const g = newGame();
+      const { x, y } = TILE_A;
+      standAdjacentTo(g, x, y);
+      assert.equal(g.use('hoe', 'radish', x, y).ok, true);
+      assert.equal(g.use('seed', 'radish', x, y).ok, true);
+
+      ensureWatered(g, x, y);
+      assert.equal(plotAt(g, x, y).watered, true);
+      const energy = g.state.energy;
+      const watered = g.state.stats.watered;
+      const minutes = g.state.minutes;
+
+      const repeat = g.use('water', 'radish', x, y);
+      assert.equal(repeat.ok, false, '已湿土地重复浇水应被拒绝');
+      assert.equal(typeof repeat.message, 'string');
+      assert.equal(g.state.energy, energy, '重复浇水不应扣体力');
+      assert.equal(g.state.stats.watered, watered, '重复浇水不应重复累加 watered 统计');
+      assert.equal(g.state.minutes, minutes, '重复浇水不应推进时间');
+      assert.equal(plotAt(g, x, y).watered, true, '地块应保持湿润');
+
+      // 隔天变干后应能重新浇水并记账
+      standNear(g, 'home');
+      assert.equal(g.sleep().ok, true);
+      if (!plotAt(g, x, y).watered) {
+        standAdjacentTo(g, x, y);
+        const before = g.state.stats.watered;
+        assert.equal(g.use('water', 'radish', x, y).ok, true, '干掉的地块应可再次浇水');
+        assert.ok(g.state.stats.watered > before, '重新浇水应计入 watered');
+      }
+    });
+  });
+
   describe('体力与井', () => {
     test('井每天只回复一次体力', () => {
       const g = newGame();
@@ -779,12 +956,13 @@ if (loadError) {
       standNear(g, 'shop');
       assert.equal(g.buy('radish', CROSS_TILES.length).ok, true);
 
-      // 升级后一次浇水覆盖目标格及其上下左右十字
+      // 升级后一次浇水覆盖目标格及其上下左右十字。
+      // 雨天开垦的地块本来就地湿，先把"湿"重置成干再验十字范围，否则重复浇水会被正确拒绝。
       for (const [x, y] of CROSS_TILES) {
         standAdjacentTo(g, x, y);
         assert.equal(g.use('hoe', 'radish', x, y).ok, true);
         assert.equal(g.use('seed', 'radish', x, y).ok, true);
-        assert.equal(plotAt(g, x, y).watered, false);
+        plotAt(g, x, y).watered = false;
       }
       standAdjacentTo(g, CROSS_CENTER.x, CROSS_CENTER.y);
       const energyBefore = g.state.energy;

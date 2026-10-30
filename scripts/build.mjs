@@ -82,6 +82,12 @@ function build() {
     sources.set(slot.label, code);
     html = html.replace(slot.placeholder, function () { return code; });
   }
+  const coverFile = resolve(ROOT, 'assets/farm-cover.webp');
+  if (!existsSync(coverFile)) throw new Error('缺少农场封面');
+  const cover = 'data:image/webp;base64,' + readFileSync(coverFile).toString('base64');
+  const coverSlot = '/*' + '__COVER__' + '*/';
+  if (html.split(coverSlot).length !== 2) throw new Error('农场封面占位符必须恰好出现一次');
+  html = html.replace(coverSlot, () => cover);
   return { html, sources };
 }
 
@@ -164,15 +170,10 @@ function selfCheck(html, sources) {
   }
   if (allInline) ok('[7] 四个源文件内容均逐字内联');
 
-  // [8] 页脚 legacy 链接的目标必须真实存在，否则就是 404
-  const legacyLink = html.match(/href="([^"]*legacy\/[^"]*)"/i);
-  if (legacyLink) {
-    const target = resolve(ROOT, legacyLink[1]);
-    if (!existsSync(target)) fail('[8] 页脚链接 ' + legacyLink[1] + ' 指向的文件不存在（会 404）');
-    else ok('[8] 页脚链接 ' + legacyLink[1] + ' 目标存在（' + relative(ROOT, target) + '，' + readFileSync(target).length + ' 字节）');
-  } else {
-    ok('[8] 产物无 legacy 页脚链接，跳过');
-  }
+  // [8] Farm-only entry and embedded artwork.
+  if (html.includes('legacy/') || html.includes('SAND_GARDEN') || html.includes('class Garden')) fail('[8] 产物仍包含旧沙盒');
+  else if (!html.includes('data:image/webp;base64,')) fail('[8] 封面未内嵌');
+  else ok('[8] 纯农场版，封面已内嵌，无旧沙盒');
 
   // [9] .nojekyll 保留
   if (!existsSync(resolve(ROOT, '.nojekyll'))) fail('[9] 仓库根缺少 .nojekyll');

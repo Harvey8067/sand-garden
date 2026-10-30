@@ -49,7 +49,7 @@ if (loadError) {
       set: (target, prop, value) => { target[prop] = value; return true; },
     });
 
-  function loadUI() {
+  function loadUI(autoStart = true, savedEntries = {}) {
     const elements = new Map();
     const listeners = { window: {}, canvas: {}, document: {} };
     const rafQueue = [];
@@ -133,10 +133,11 @@ if (loadError) {
 
     const canvas = element('farm');
 
+    const savedStore=new Map(Object.entries(savedEntries));
     const sandbox = {
       console,
       document,
-      localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+      localStorage: { getItem: key => savedStore.get(key) ?? null, setItem: (key,value) => savedStore.set(key,String(value)), removeItem: key => savedStore.delete(key) },
       performance: { now: () => clock.t },
       setTimeout: (fn) => 0,
       clearTimeout() {},
@@ -160,11 +161,13 @@ if (loadError) {
     new vm.Script(readFileSync(UI_PATH, 'utf8'), { filename: UI_PATH }).runInContext(context);
 
     const api = sandbox.window.SAND_FARM;
+    if (autoStart) element('startFarmBtn').onclick();
     assert.ok(api, 'ui.js 应在 window.SAND_FARM 暴露调试接口');
 
     const ui = {
       api,
       game: api.game,
+      savedStore,
       element,
       guide: (id) => guideButtons.find((b) => b.dataset.go === id),
       dialogOpen: () => element('dialog').open,
@@ -226,6 +229,23 @@ if (loadError) {
   const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 
   describe('UI 装载', () => {
+    test('旧2.0农场存档可从封面继续，坏自动存档回退手动存档',()=>{
+      const g=new FarmCore.FarmGame();g.state.day=8;g.state.money=345;const record=JSON.stringify({format:'sand-garden-farm',version:2,state:g.snapshot()});
+      const ui=loadUI(false,{'sand-garden-farm-v2':record,'sand-garden-farm-v2-auto':'invalid-json'});
+      assert.equal(ui.element('continueFarmBtn').hidden,false);ui.element('continueFarmBtn').onclick();assert.equal(ui.api.health().started,true);assert.equal(ui.api.state().day,8);assert.equal(ui.api.state().money,345);assert.equal(ui.element('farmLayout').hidden,false);
+    });
+    test('坏存档不会离开封面或损坏开局进度',()=>{
+      const ui=loadUI(false,{'sand-garden-farm-v2':'{}'}),before=JSON.stringify(ui.api.state());ui.element('continueFarmBtn').onclick();assert.equal(ui.api.health().started,false);assert.equal(JSON.stringify(ui.api.state()),before);assert.match(ui.toast(),/未找到/);
+    });
+    test('睡觉后显示每日生长和天气总结，确认后恢复操作',()=>{
+      const ui=loadUI();ui.game.state.player={x:6,y:7,facing:'down'};ui.element('interactBtn').onclick();const actions=ui.element('dialogActions').children;actions.find(b=>b.textContent==='睡到明天').onclick();assert.equal(ui.api.state().day,2);assert.match(ui.dialogTitle(),/早安，第 2 天/);assert.match(ui.element('dialogBody').innerHTML,/块作物生长/);ui.element('dialogActions').children[0].onclick();assert.equal(ui.dialogOpen(),false);assert.ok(ui.savedStore.has('sand-garden-farm-v2-auto'));
+    });
+    test('商店提供1份和5份购买并根据余额禁用',()=>{
+      const ui=loadUI();ui.game.state.player={x:23,y:7,facing:'up'};ui.element('interactBtn').onclick();const box=ui.element('dialogBody').children[0];const row=box.children.find(x=>x.className==='shop-row');const buys=row.children[1].children;assert.match(buys[1].textContent,/买 5 份/);assert.equal(buys[1].disabled,false);buys[1].onclick();assert.equal(ui.api.state().seeds.radish,11);assert.equal(ui.api.state().money,40);
+    });
+    test('封面期间不推进游戏，开始后显示农场，可返回封面', () => {
+      const ui=loadUI(false);assert.equal(ui.api.health().started,false);const before=JSON.stringify(ui.api.state());ui.frame(30);assert.equal(JSON.stringify(ui.api.state()),before);ui.element('startFarmBtn').onclick();assert.equal(ui.api.health().started,true);assert.equal(ui.element('welcomeScreen').hidden,true);assert.equal(ui.element('farmLayout').hidden,false);ui.element('albumBtn').onclick();assert.equal(ui.api.health().started,false);assert.equal(ui.element('welcomeScreen').hidden,false);
+    });
     test('在 DOM 桩里能加载真实 ui.js 并暴露 SAND_FARM', () => {
       const ui = loadUI();
       const health = ui.api.health();

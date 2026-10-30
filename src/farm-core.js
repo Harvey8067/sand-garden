@@ -445,6 +445,8 @@
           if (self.state.plots[nk]) targets.push(nk);
         });
       }
+      targets = targets.filter(function (k) { return !self.state.plots[k].watered; });
+      if (!targets.length) return fail('这些土地已经湿润，不需要重复浇水。');
       targets.forEach(function (k) { self.state.plots[k].watered = true; });
       this.state.stats.watered += targets.length; // 每次浇水按实际覆盖的地块数计数
       this._spendAndWait(cost);
