@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{createRequire}from'node:module';const require=createRequire(import.meta.url),{create}=require('../src/motion.js');
+test('移动在140毫秒内插值，不直接跳32像素',()=>{const m=create({x:10,y:10,facing:'down'});m.set({x:11,y:10,facing:'right'},100);assert.equal(m.sample(100).x,10);assert.equal(m.sample(170).x,10.5);assert.equal(m.sample(240).x,11);});
+test('30/60/144FPS相同时刻到相同位置',()=>{const results=[];for(const fps of [30,60,144]){const m=create({x:0,y:0});m.set({x:1,y:0},0);for(let t=0;t<70;t+=1000/fps)m.sample(t);results.push(m.sample(70).x);}assert.deepEqual(results,[0.5,0.5,0.5]);});
+test('读档或长距离传送立即定位，不拖着镜头跨地图飞行',()=>{const m=create({x:0,y:0});m.set({x:35,y:20},20);assert.equal(m.sample(20).x,35);m.snap({x:12,y:8},30);assert.equal(m.sample(30).x,12);});
+test('切换方向保持连续，像素位置对齐且没有越过目标',()=>{const m=create({x:10,y:10});m.set({x:11,y:10},0);const before=m.sample(70);m.set({x:11,y:11},70);assert.deepEqual({...m.sample(70)},{...before});const p=m.sample(100);assert.ok(p.x>=10.5&&p.x<=11);assert.equal(p.x*32,Math.round(p.x*32));assert.equal(m.sample(500).y,11);});

@@ -505,5 +505,39 @@ if (loadError) {
         }
       }
     });
+
+    test('2.3 新增设施：牧场/加工坊/帮手驿站可达，障碍避开河道与桥', () => {
+      for (const id of ['ranch', 'workshop', 'guild']) {
+        assert.ok(loc(id), 'LOCATIONS 应包含 ' + id);
+      }
+      const g = newGame();
+      const reachable = reachableFrom(g);
+      for (const id of ['ranch', 'workshop', 'guild']) {
+        const at = loc(id);
+        const ok = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+          .some(([dx, dy]) => reachable.has((at.x + dx) + ',' + (at.y + dy)));
+        assert.ok(ok, id + ' 应能从出生点走到');
+      }
+
+      // 牧场入口 (2,8) 必须可到
+      assert.ok(reachable.has('2,8'), '牧场入口 (2,8) 应可达');
+      // 牧场建筑 x0..2,y4..7 不可走（若实现按契约落建筑）
+      for (let y = 4; y <= 7; y++) {
+        for (let x = 0; x <= 2; x++) {
+          assert.equal(g.isWalkable(x, y), false, '牧场建筑 (' + x + ',' + y + ') 应不可走');
+        }
+      }
+
+      // 河道 x40..41 上不能有障碍；桥 y20 可走
+      for (let y = 10; y <= 28; y++) {
+        for (const x of [40, 41]) {
+          assert.equal(g.obstacleAt(x, y), null, '河道 (' + x + ',' + y + ') 不应生成障碍');
+        }
+      }
+      assert.equal(g.isWalkable(40, 20), true, '桥应可走');
+      assert.equal(g.isWalkable(41, 20), true, '桥应可走');
+      // 桥把两岸连起来：右岸 (41,y) 附近区域可达
+      assert.ok(reachable.has('39,20') || reachable.has('40,20'), '桥头应可达');
+    });
   });
 }

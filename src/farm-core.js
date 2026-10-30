@@ -42,7 +42,10 @@
     miller: { x: 31, y: 8, name: '麦叔' },
     ranger: { x: 36, y: 6, name: '林岚' },
     miner: { x: 27, y: 26, name: '石川' },
-    florist: { x: 20, y: 26, name: '小葵' }
+    florist: { x: 20, y: 26, name: '小葵' },
+    ranch: { x: 2, y: 8, name: '牧场' },
+    workshop: { x: 25, y: 10, name: '加工坊' },
+    guild: { x: 28, y: 7, name: '帮手驿站' }
   };
 
   var NPCS = {
@@ -90,6 +93,46 @@
     { id: 'flower-festival', name: '花开时节', npc: 'florist', description: '为花节采收 40 次收成，让村里开满花。', stat: 'harvested', target: 40, reward: 250, requiresQuest: 'colorful-harvest' }
   ];
 
+  // ---- 2.3 生产经营：产品 / 物品 / 配方 / 建筑 / 帮手 ----
+
+  var PRODUCTS = {
+    egg: { name: '鸡蛋', sellPrice: 25 },
+    milk: { name: '牛奶', sellPrice: 60 },
+    mayo: { name: '蛋黄酱', sellPrice: 80 },
+    cheese: { name: '奶酪', sellPrice: 180 },
+    jam: { name: '果酱', sellPrice: 180 }
+  };
+
+  var ITEMS = {};
+  Object.keys(CROPS).forEach(function (id) { ITEMS[id] = CROPS[id]; });
+  Object.keys(PRODUCTS).forEach(function (id) { ITEMS[id] = PRODUCTS[id]; });
+
+  var RECIPES = {
+    mayo: { name: '蛋黄酱', ingredients: { egg: 2 }, days: 1 },
+    cheese: { name: '奶酪', ingredients: { milk: 2 }, days: 1 },
+    jam: { name: '果酱', ingredients: { berry: 2 }, days: 1 }
+  };
+
+  var BUILDINGS = {
+    coop: { name: '鸡舍', money: 120, wood: 6, stone: 0 },
+    barn: { name: '牛棚', money: 300, wood: 12, stone: 6 },
+    workshop: { name: '加工坊', money: 180, wood: 6, stone: 4 }
+  };
+
+  var HELPERS = {
+    waterer: { name: '浇水帮手', hirePrice: 50, wage: 25, capacity: 12 },
+    harvester: { name: '采收帮手', hirePrice: 60, wage: 30, capacity: 8 }
+  };
+
+  var ANIMALS = {
+    chicken: { name: '鸡', price: 80, facility: 'coop', cap: 6, product: 'egg' },
+    cow: { name: '牛', price: 220, facility: 'barn', cap: 3, product: 'milk' }
+  };
+
+  var MAX_JOBS = 3;
+  var JOB_QTY_MAX = 5;
+  var FEED_PRICE = 5;
+
   // ---------------------------------------------------------------- 地图规则（2.2）
 
   var HOUSE = { x0: 3, x1: 8, y0: 3, y1: 6 };   // 不可走
@@ -100,6 +143,9 @@
   var ROAD_H = { y: 8, x0: 2, x1: 40 };
   var ROAD_V1 = { x: 18, y0: 8, y1: 28 };
   var ROAD_V2 = { x: 28, y0: 8, y1: 28 };
+  var RANCH_BUILDING = { x0: 0, x1: 2, y0: 4, y1: 7 }; // 牧场建筑，不可走
+  var RIVER = { x0: 40, x1: 41, y0: 10, y1: 28 };      // 河道，只有 y20 是桥
+  var BRIDGE_Y = 20;
 
   var START = { x: 12, y: 8, facing: 'down' };
   var START_DAY_MINUTES = 6 * 60;   // 06:00
@@ -133,6 +179,8 @@
 
   function isHouse(x, y) { return x >= HOUSE.x0 && x <= HOUSE.x1 && y >= HOUSE.y0 && y <= HOUSE.y1; }
   function isShop(x, y) { return x >= SHOP.x0 && x <= SHOP.x1 && y >= SHOP.y0 && y <= SHOP.y1; }
+  function isRanchBuilding(x, y) { return inRect(RANCH_BUILDING, x, y); }
+  function isRiver(x, y) { return inRect(RIVER, x, y) && y !== BRIDGE_Y; }
   function isPond(x, y) {
     var dx = (x - POND.cx) / POND.rx;
     var dy = (y - POND.cy) / POND.ry;
@@ -150,10 +198,22 @@
   // 纯地形判定：建筑 > 水面 > 道路 > 草地（池塘压在 x=28 道路上时以水面为准）
   function terrainAt(x, y) {
     if (!inBounds(x, y)) return 'outside';
-    if (isHouse(x, y) || isShop(x, y)) return 'building';
+    if (isHouse(x, y) || isShop(x, y) || isRanchBuilding(x, y)) return 'building';
     if (isPond(x, y)) return 'water';
+    if (inRect(RIVER, x, y)) return y === BRIDGE_Y ? 'path' : 'water'; // 河道，y20 为桥
     if (isRoad(x, y)) return 'path';
     return 'grass';
+  }
+
+  // 2.3 地貌（只读，不影响通行）：林地 / 高地 / 河岸 / 草甸 / 村庄 / 农田
+  function biomeOf(x, y) {
+    if (!inBounds(x, y)) return 'outside';
+    if (x >= 0 && x <= 4 && y >= 10 && y <= 27) return 'woodland';
+    if (x >= 28 && x <= 41 && y >= 0 && y <= 5) return 'highland';
+    if (x >= 39 && y >= 10 && y <= 28) return 'riverbank';
+    if (x >= 19 && x <= 28 && y >= 20 && y <= 29) return 'meadow';
+    if (y <= 9) return 'village';
+    return 'farmland';
   }
 
   function cheb(ax, ay, bx, by) {
@@ -192,6 +252,8 @@
   function fail(message) { return { ok: false, message: message }; }
 
   var CROP_IDS = Object.keys(CROPS);
+  var ITEM_IDS = Object.keys(ITEMS);
+  var PRODUCT_IDS = Object.keys(PRODUCTS);
 
   function findQuest(id) {
     for (var i = 0; i < QUESTS.length; i++) if (QUESTS[i].id === id) return QUESTS[i];
@@ -347,6 +409,8 @@
     if (!isPlainObject(data.bag)) throw saveError('bag 必须是对象。');
     CROP_IDS.forEach(function (id) {
       if (data.seeds[id] !== undefined && (!isInt(data.seeds[id]) || data.seeds[id] < 0 || data.seeds[id] > 999999)) throw saveError('seeds.' + id + ' 必须是非负整数。');
+    });
+    ITEM_IDS.forEach(function (id) {
       if (data.bag[id] !== undefined && (!isInt(data.bag[id]) || data.bag[id] < 0 || data.bag[id] > 999999)) throw saveError('bag.' + id + ' 必须是非负整数。');
     });
     if (!isPlainObject(data.plots)) throw saveError('plots 必须是对象。');
@@ -383,6 +447,44 @@
     if (!isPlainObject(data.player)) throw saveError('player 必须是对象。');
     if (!inBounds(data.player.x, data.player.y)) throw saveError('player 坐标超出地图。');
     if (FACINGS.indexOf(data.player.facing) < 0) throw saveError('player.facing 必须是 up/down/left/right。');
+
+    // ---- 2.3 新字段：旧存档可以完全没有；一旦存在就必须合法 ----
+    if (data.livestock !== undefined) {
+      var lv = data.livestock;
+      if (!isPlainObject(lv)) throw saveError('livestock 必须是对象。');
+      ['coop', 'barn'].forEach(function (k) {
+        if (typeof lv[k] !== 'boolean') throw saveError('livestock.' + k + ' 必须是布尔值。');
+      });
+      if (!isInt(lv.chickens) || lv.chickens < 0 || lv.chickens > 6) throw saveError('livestock.chickens 必须是 0 到 6 的整数。');
+      if (!isInt(lv.cows) || lv.cows < 0 || lv.cows > 3) throw saveError('livestock.cows 必须是 0 到 3 的整数。');
+      if (lv.chickens > 0 && !lv.coop) throw saveError('livestock.chickens 需要先建好鸡舍。');
+      if (lv.cows > 0 && !lv.barn) throw saveError('livestock.cows 需要先建好牛棚。');
+      ['feed', 'eggsReady', 'milkReady'].forEach(function (k) {
+        if (!isInt(lv[k]) || lv[k] < 0 || lv[k] > 999999) throw saveError('livestock.' + k + ' 必须是非负整数。');
+      });
+      if (!isInt(lv.fedAtDay) || lv.fedAtDay < 0 || lv.fedAtDay > data.day) throw saveError('livestock.fedAtDay 必须在 0 到 day 之间。');
+    }
+    if (data.industry !== undefined) {
+      var ind = data.industry;
+      if (!isPlainObject(ind)) throw saveError('industry 必须是对象。');
+      if (typeof ind.built !== 'boolean') throw saveError('industry.built 必须是布尔值。');
+      if (!Array.isArray(ind.jobs)) throw saveError('industry.jobs 必须是数组。');
+      if (ind.jobs.length > MAX_JOBS) throw saveError('industry.jobs 最多 ' + MAX_JOBS + ' 条。');
+      if (ind.jobs.length > 0 && !ind.built) throw saveError('industry.jobs 需要先建好加工坊。');
+      ind.jobs.forEach(function (job) {
+        if (!isPlainObject(job)) throw saveError('industry.jobs 里必须是对象。');
+        if (!RECIPES[job.recipe]) throw saveError('industry.jobs 里的配方未知：' + job.recipe);
+        if (!isInt(job.qty) || job.qty < 1 || job.qty > JOB_QTY_MAX) throw saveError('industry.jobs 的 qty 必须是 1 到 ' + JOB_QTY_MAX + ' 的整数。');
+        if (!isInt(job.readyDay) || job.readyDay < 1) throw saveError('industry.jobs 的 readyDay 必须是正整数。');
+      });
+    }
+    if (data.helpers !== undefined) {
+      var hp = data.helpers;
+      if (!isPlainObject(hp)) throw saveError('helpers 必须是对象。');
+      ['waterer', 'harvester'].forEach(function (k) {
+        if (typeof hp[k] !== 'boolean') throw saveError('helpers.' + k + ' 必须是布尔值。');
+      });
+    }
   }
 
   // cleared 只存地图内的 "x,y"，不强制是固定布景（版本演进时更宽容）：
@@ -397,6 +499,8 @@
     var seeds = {}, bag = {};
     CROP_IDS.forEach(function (id) {
       seeds[id] = data.seeds[id] || 0;
+    });
+    ITEM_IDS.forEach(function (id) {
       bag[id] = data.bag[id] || 0;
     });
     var plots = {};
@@ -435,8 +539,44 @@
         earned: data.stats.earned,
         watered: data.stats.watered
       },
-      player: { x: data.player.x, y: data.player.y, facing: data.player.facing }
+      player: { x: data.player.x, y: data.player.y, facing: data.player.facing },
+      livestock: buildLivestock(data.livestock),
+      industry: buildIndustry(data.industry),
+      helpers: buildHelpers(data.helpers)
     };
+  }
+
+  // 2.3 新字段归一化：旧存档缺字段时给默认值，存在时按已校验的数据拷贝
+  function buildLivestock(src) {
+    var d = { coop: false, barn: false, chickens: 0, cows: 0, feed: 0, fedAtDay: 0, eggsReady: 0, milkReady: 0 };
+    if (!src) return d;
+    d.coop = !!src.coop;
+    d.barn = !!src.barn;
+    d.chickens = src.chickens;
+    d.cows = src.cows;
+    d.feed = src.feed;
+    d.fedAtDay = src.fedAtDay;
+    d.eggsReady = src.eggsReady;
+    d.milkReady = src.milkReady;
+    return d;
+  }
+
+  function buildIndustry(src) {
+    var d = { built: false, jobs: [] };
+    if (!src) return d;
+    d.built = !!src.built;
+    d.jobs = src.jobs.map(function (job) {
+      return { recipe: job.recipe, qty: job.qty, readyDay: job.readyDay };
+    });
+    return d;
+  }
+
+  function buildHelpers(src) {
+    var d = { waterer: false, harvester: false };
+    if (!src) return d;
+    d.waterer = !!src.waterer;
+    d.harvester = !!src.harvester;
+    return d;
   }
 
   // ---------------------------------------------------------------- FarmGame
@@ -458,7 +598,7 @@
       energy: 100,
       maxEnergy: 100,
       seeds: { radish: 6, carrot: 2, berry: 0 },
-      bag: { radish: 0, carrot: 0, berry: 0 },
+      bag: { radish: 0, carrot: 0, berry: 0, egg: 0, milk: 0, mayo: 0, cheese: 0, jam: 0 },
       wood: 0,
       stone: 0,
       plots: {},
@@ -467,7 +607,10 @@
       claimed: [],
       restedAtDay: 0,
       stats: { harvested: 0, sold: 0, earned: 0, watered: 0 },
-      player: { x: START.x, y: START.y, facing: START.facing }
+      player: { x: START.x, y: START.y, facing: START.facing },
+      livestock: { coop: false, barn: false, chickens: 0, cows: 0, feed: 0, fedAtDay: 0, eggsReady: 0, milkReady: 0 },
+      industry: { built: false, jobs: [] },
+      helpers: { waterer: false, harvester: false }
     };
   }
 
@@ -475,6 +618,10 @@
 
   FarmGame.prototype.tileAt = function (x, y) {
     return terrainAt(x, y);
+  };
+
+  FarmGame.prototype.biomeAt = function (x, y) {
+    return biomeOf(x, y);
   };
 
   FarmGame.prototype.isFarmTile = function (x, y) {
@@ -677,6 +824,144 @@
     return { ok: true, message: text[loc.id] || ('这里是' + loc.name + '。'), kind: loc.id };
   };
 
+  // ---- 2.3 生产经营：设施 / 养殖 / 加工 / 帮手
+
+  function sortedPlotKeys(st) {
+    return Object.keys(st.plots).sort(function (a, b) {
+      var A = a.split(','), B = b.split(',');
+      var ay = parseInt(A[1], 10), by = parseInt(B[1], 10);
+      return ay - by || parseInt(A[0], 10) - parseInt(B[0], 10);
+    });
+  }
+
+  function facilityBuilt(st, id) {
+    if (id === 'coop') return !!st.livestock.coop;
+    if (id === 'barn') return !!st.livestock.barn;
+    if (id === 'workshop') return !!st.industry.built;
+    return false;
+  }
+
+  FarmGame.prototype.buildFacility = function (id) {
+    var def = BUILDINGS[id];
+    if (!def) return fail('不认识这种设施：' + id + '。');
+    if (!this._near(id === 'workshop' ? 'workshop' : 'ranch')) {
+      return fail('要到' + (id === 'workshop' ? '加工坊' : '牧场') + '旁边才能建造。');
+    }
+    if (facilityBuilt(this.state, id)) return fail(def.name + '已经建好了。');
+    if (this.state.money < def.money) return fail('金币不够：建造' + def.name + '需要 ' + def.money + ' G。');
+    if (this.state.wood < def.wood) return fail('木材不够：建造' + def.name + '需要 ' + def.wood + ' 份。');
+    if (this.state.stone < def.stone) return fail('石料不够：建造' + def.name + '需要 ' + def.stone + ' 份。');
+    this.state.money -= def.money;
+    this.state.wood -= def.wood;
+    this.state.stone -= def.stone;
+    if (id === 'coop') this.state.livestock.coop = true;
+    else if (id === 'barn') this.state.livestock.barn = true;
+    else this.state.industry.built = true;
+    return ok('建好了' + def.name + '。');
+  };
+
+  FarmGame.prototype.buyAnimal = function (type, qty) {
+    var def = ANIMALS[type];
+    if (!def) return fail('没有这种动物：' + type + '。');
+    if (!this._near('ranch')) return fail('要到牧场旁边才能买动物。');
+    qty = qty === undefined ? 1 : qty;
+    if (!isInt(qty) || qty < 1 || qty > def.cap) return fail('一次购买数量要在 1 到 ' + def.cap + ' 之间。');
+    if (!facilityBuilt(this.state, def.facility)) return fail('要先建好' + BUILDINGS[def.facility].name + '。');
+    var field = type === 'chicken' ? 'chickens' : 'cows';
+    if (this.state.livestock[field] + qty > def.cap) return fail(def.name + '最多养 ' + def.cap + ' 只。');
+    var cost = def.price * qty;
+    if (this.state.money < cost) return fail('金币不够：需要 ' + cost + ' G。');
+    this.state.money -= cost;
+    this.state.livestock[field] += qty;
+    return ok('买了 ' + qty + ' 只' + def.name + '，花了 ' + cost + ' G。');
+  };
+
+  FarmGame.prototype.buyFeed = function (qty) {
+    if (!this._near('ranch') && !this._near('shop')) return fail('要到牧场或杂货铺旁边才能买饲料。');
+    qty = qty === undefined ? 1 : qty;
+    if (!isInt(qty) || qty < 1 || qty > 99) return fail('一次购买饲料数量要在 1 到 99 之间。');
+    var cost = FEED_PRICE * qty;
+    if (this.state.money < cost) return fail('金币不够：需要 ' + cost + ' G。');
+    this.state.money -= cost;
+    this.state.livestock.feed += qty;
+    return ok('买了 ' + qty + ' 份饲料，花了 ' + cost + ' G。');
+  };
+
+  FarmGame.prototype.feedAnimals = function () {
+    if (!this._near('ranch')) return fail('要到牧场旁边才能喂动物。');
+    var lv = this.state.livestock;
+    var total = lv.chickens + lv.cows;
+    if (total <= 0) return fail('还没有养动物。');
+    if (lv.fedAtDay === this.state.day) return fail('今天已经喂过了。');
+    var need = lv.chickens + lv.cows * 2;
+    if (lv.feed < need) return fail('饲料不够：需要 ' + need + ' 份。');
+    lv.feed -= need;
+    lv.fedAtDay = this.state.day;
+    return ok('喂了 ' + lv.chickens + ' 只鸡、' + lv.cows + ' 头牛，消耗 ' + need + ' 份饲料。');
+  };
+
+  FarmGame.prototype.collectAnimalProducts = function () {
+    if (!this._near('ranch')) return fail('要到牧场旁边才能收蛋奶。');
+    var lv = this.state.livestock;
+    var eggs = lv.eggsReady, milk = lv.milkReady;
+    if (eggs <= 0 && milk <= 0) return fail('现在没有可以收的蛋或奶。');
+    this.state.bag.egg += eggs;
+    this.state.bag.milk += milk;
+    lv.eggsReady = 0;
+    lv.milkReady = 0;
+    return ok('收下 ' + eggs + ' 个鸡蛋、' + milk + ' 瓶牛奶。');
+  };
+
+  FarmGame.prototype.craft = function (recipeId, qty) {
+    var def = RECIPES[recipeId];
+    if (!def) return fail('没有这种配方：' + recipeId + '。');
+    if (!this._near('workshop')) return fail('要到加工坊旁边才能加工。');
+    if (!this.state.industry.built) return fail('要先建好加工坊。');
+    qty = qty === undefined ? 1 : qty;
+    if (!isInt(qty) || qty < 1 || qty > JOB_QTY_MAX) return fail('每批数量要在 1 到 ' + JOB_QTY_MAX + ' 之间。');
+    if (this.state.industry.jobs.length >= MAX_JOBS) return fail('加工队列已经满了。');
+    var ids = Object.keys(def.ingredients);
+    for (var i = 0; i < ids.length; i++) {
+      var need = def.ingredients[ids[i]] * qty;
+      if ((this.state.bag[ids[i]] || 0) < need) return fail(materialName(ids[i]) + '不够：需要 ' + need + ' 个。');
+    }
+    ids.forEach(function (k) { this.state.bag[k] -= def.ingredients[k] * qty; }, this);
+    this.state.industry.jobs.push({ recipe: recipeId, qty: qty, readyDay: this.state.day + def.days });
+    return ok('开始加工 ' + qty + ' 份' + def.name + '，明天就好。');
+  };
+
+  FarmGame.prototype.collectCrafted = function () {
+    if (!this._near('workshop')) return fail('要到加工坊旁边才能取成品。');
+    var jobs = this.state.industry.jobs;
+    var ready = jobs.filter(function (j) { return j.readyDay <= this.state.day; }, this);
+    if (!ready.length) return fail('还没有加工好的成品。');
+    var got = 0;
+    ready.forEach(function (j) { this.state.bag[j.recipe] += j.qty; got += j.qty; }, this);
+    var today = this.state.day;
+    this.state.industry.jobs = jobs.filter(function (j) { return j.readyDay > today; });
+    return ok('取回 ' + got + ' 份加工品。');
+  };
+
+  FarmGame.prototype.hireHelper = function (id) {
+    var def = HELPERS[id];
+    if (!def) return fail('没有这种帮手：' + id + '。');
+    if (!this._near('guild')) return fail('要到帮手驿站才能雇佣。');
+    if (this.state.helpers[id]) return fail(def.name + '已经雇好了。');
+    if (this.state.money < def.hirePrice) return fail('金币不够：雇佣需要 ' + def.hirePrice + ' G。');
+    this.state.money -= def.hirePrice;
+    this.state.helpers[id] = true;
+    return ok('雇好了' + def.name + '。');
+  };
+
+  FarmGame.prototype.fireHelper = function (id) {
+    var def = HELPERS[id];
+    if (!def) return fail('没有这种帮手：' + id + '。');
+    if (!this._near('guild')) return fail('要到帮手驿站才能解雇。');
+    if (!this.state.helpers[id]) return fail('还没有雇佣' + def.name + '。');
+    this.state.helpers[id] = false;
+    return ok('和' + def.name + '结束了合作，没有退还雇佣费。');
+  };
+
   // ---- 睡觉 / 时间
 
   FarmGame.prototype.sleep = function () {
@@ -684,30 +969,89 @@
     var home = LOCATIONS.home;
     if (cheb(p.x, p.y, home.x, home.y) > 1) return fail('要回到小屋旁边才能睡觉。');
 
+    var st = this.state;
+    var plots = st.plots;
+    var nextWeather = weatherForDay(st.seed, st.day + 1);
+    var skipped = [];
+    var helpers = { watered: 0, harvested: 0, wages: 0, skipped: skipped };
+    var keys = Object.keys(plots).sort(function (a, b) {
+      var A = a.split(','), B = b.split(',');
+      return parseInt(A[1], 10) - parseInt(B[1], 10) || parseInt(A[0], 10) - parseInt(B[0], 10);
+    });
+
+    // 雨天（今天或明天）田地由雨水打理：浇水帮手没有活干，也不收工资
+    var rainCovers = nextWeather === 'rainy' || st.weather === 'rainy';
+    if (st.helpers.waterer) {
+      var thirsty = keys.filter(function (k) {
+        var pl = plots[k];
+        return pl.crop && pl.crop.age < CROPS[pl.crop.id].days && !pl.watered;
+      }).slice(0, HELPERS.waterer.capacity);
+      if (rainCovers) skipped.push('浇水帮手：今天或明天有雨，田地由雨水打理，今晚不用上工。');
+      else if (!thirsty.length) skipped.push('浇水帮手：今天没有需要浇水的作物。');
+      else if (st.money < HELPERS.waterer.wage) skipped.push('浇水帮手：金币不足 ' + HELPERS.waterer.wage + '，今晚没有上工。');
+      else {
+        thirsty.forEach(function (k) { plots[k].watered = true; });
+        st.money -= HELPERS.waterer.wage;
+        st.stats.watered += thirsty.length;
+        helpers.watered = thirsty.length;
+        helpers.wages += HELPERS.waterer.wage;
+      }
+    }
+
+    // 记录「今晚之前就已经成熟」的地块：帮手只收这些，今晚刚成熟的留给玩家自己收
+    var ripeBefore = keys.filter(function (k) {
+      var pl = plots[k];
+      return pl.crop && pl.crop.age >= CROPS[pl.crop.id].days;
+    });
+
     var grown = 0;
-    var plots = this.state.plots;
-    Object.keys(plots).forEach(function (key) {
+    keys.forEach(function (key) {
       var plot = plots[key];
       if (plot.crop) {
         var def = CROPS[plot.crop.id];
-        if (plot.crop.age < def.days && plot.watered) {
-          plot.crop.age += 1;
-          grown += 1;
-        }
+        if (plot.crop.age < def.days && plot.watered) { plot.crop.age += 1; grown += 1; }
       }
-      plot.watered = false; // 清空当天的浇水记录
+      plot.watered = false;
     });
 
-    this.state.day += 1;
-    this.state.minutes = START_DAY_MINUTES;
-    this.state.energy = this.state.maxEnergy;
-    var weather = weatherForDay(this.state.seed, this.state.day);
-    this.state.weather = weather;
-    if (weather === 'rainy') {
-      Object.keys(plots).forEach(function (key) { plots[key].watered = true; });
+    if (st.helpers.harvester) {
+      var ripe = ripeBefore.filter(function (k) { return plots[k].crop; }).slice(0, HELPERS.harvester.capacity);
+      if (!ripe.length) skipped.push('采收帮手：没有成熟的作物需要采收。');
+      else if (st.money < HELPERS.harvester.wage) skipped.push('采收帮手：金币不足 ' + HELPERS.harvester.wage + '，今晚没有上工。');
+      else {
+        ripe.forEach(function (k) {
+          var id = plots[k].crop.id;
+          plots[k].crop = null;
+          st.bag[id] = (st.bag[id] || 0) + 1;
+        });
+        st.money -= HELPERS.harvester.wage;
+        st.stats.harvested += ripe.length;
+        helpers.harvested = ripe.length;
+        helpers.wages += HELPERS.harvester.wage;
+      }
     }
-    var summary = { grown: grown, day: this.state.day, weather: weather };
-    var text = '第 ' + this.state.day + ' 天开始了，' + (weather === 'rainy' ? '外面下着雨' : '天气晴朗') +
+
+    var lv = st.livestock;
+    var animals = { eggs: 0, milk: 0, unfed: false };
+    var hasAnimals = lv.chickens + lv.cows > 0;
+    if (hasAnimals && lv.fedAtDay === st.day) {
+      animals.eggs = lv.chickens;
+      animals.milk = lv.cows;
+      lv.eggsReady += lv.chickens;
+      lv.milkReady += lv.cows;
+    } else if (hasAnimals) animals.unfed = true;
+
+    st.day += 1;
+    st.minutes = START_DAY_MINUTES;
+    st.energy = st.maxEnergy;
+    var weather = weatherForDay(st.seed, st.day);
+    st.weather = weather;
+    if (weather === 'rainy') keys.forEach(function (key) { plots[key].watered = true; });
+    var craftReady = st.industry.jobs.filter(function (job) { return job.readyDay <= st.day; }).length;
+
+    var summary = { grown: grown, day: st.day, weather: weather, animals: animals, helpers: helpers, craftReady: craftReady };
+    this.summary = summary; // 最近一次睡觉的总结（UI 展示用）
+    var text = '第 ' + st.day + ' 天开始了，' + (weather === 'rainy' ? '外面下着雨' : '天气晴朗') +
       (grown > 0 ? '，有 ' + grown + ' 株作物长高了。' : '。');
     return { ok: true, message: text, summary: summary };
   };
@@ -739,11 +1083,11 @@
     if (!this._near('bin')) return fail('要到出货箱旁边才能出售作物。');
     var bag = this.state.bag;
     var sold = 0, earned = 0;
-    Object.keys(CROPS).forEach(function (id) {
+    Object.keys(ITEMS).forEach(function (id) {
       var qty = bag[id] || 0;
       if (!qty) return;
       sold += qty;
-      earned += qty * CROPS[id].sellPrice;
+      earned += qty * ITEMS[id].sellPrice;
       bag[id] = 0;
     });
     if (sold === 0) return fail('背包里还没有可以出售的作物。');
@@ -875,6 +1219,27 @@
     this.state = buildState(copy);
   };
 
+  // 便捷只读访问器：state.helpers 的别名（UI/测试读取帮手状态用）
+  Object.defineProperty(FarmGame.prototype, 'helpers', {
+    get: function () { return this.state.helpers; },
+    enumerable: false,
+    configurable: true
+  });
+
+  // 便捷只读访问器：state.livestock 的别名
+  Object.defineProperty(FarmGame.prototype, 'livestock', {
+    get: function () { return this.state.livestock; },
+    enumerable: false,
+    configurable: true
+  });
+
+  // 便捷只读访问器：state.industry 的别名
+  Object.defineProperty(FarmGame.prototype, 'industry', {
+    get: function () { return this.state.industry; },
+    enumerable: false,
+    configurable: true
+  });
+
   return {
     FarmGame: FarmGame,
     CROPS: CROPS,
@@ -882,6 +1247,12 @@
     LOCATIONS: LOCATIONS,
     NPCS: NPCS,
     QUESTS: QUESTS,
-    TOOLS: TOOLS
+    TOOLS: TOOLS,
+    PRODUCTS: PRODUCTS,
+    ITEMS: ITEMS,
+    RECIPES: RECIPES,
+    BUILDINGS: BUILDINGS,
+    HELPERS: HELPERS,
+    ANIMALS: ANIMALS
   };
 });

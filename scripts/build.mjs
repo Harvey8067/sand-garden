@@ -68,9 +68,11 @@ function build() {
       throw new Error(SHELL + ' 中占位符 ' + slot.placeholder + ' 出现 ' + occurrences + ' 次，应恰好 1 次');
     }
     let code = readText(slot.source);
+    if (slot.source === 'src/ui.js') code = readText('src/motion.js') + String.fromCharCode(10) + code;
     if (slot.kind === 'style' && existsSync(resolve(ROOT, 'src/art-theme.css'))) {
       code += String.fromCharCode(10) + readText('src/art-theme.css');
       if (existsSync(resolve(ROOT, 'src/immersive.css'))) code += String.fromCharCode(10) + readText('src/immersive.css');
+      if (existsSync(resolve(ROOT, 'src/production.css'))) code += String.fromCharCode(10) + readText('src/production.css');
     }
     if (slot.kind === 'script') {
       if (/<\/script/i.test(code)) throw new Error(slot.source + ' 含有 </script，无法安全内联');

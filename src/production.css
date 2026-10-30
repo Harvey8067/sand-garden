@@ -1,0 +1,549 @@
+/* ==========================================================================
+   栖砂·田园记 2.3 — 生产经营面板业务样式  production.css  (task-23 / art)
+   ==========================================================================
+   定位：只负责「经营」面板内部的业务组件外观，不改任何外部布局。
+   加载：由 build 接在 style.css / art-theme.css / immersive.css 之后，
+        作为独立样式段或同段末尾均可（本文件不含 @media 主布局改写）。
+
+   命名约定（Lead 接入 UI 请按此产出 DOM）
+     .business-panel      经营面板根节点（建议放在 .in-game-panel > .menu-content 内）
+     .business-tabs       页签容器
+       .business-tab      单个页签（button，aria-selected 控制选中）
+     .business-section    一段区块（对应一个 <section>）
+     .business-head       区块标题行（h3 + 右侧计数/提示）
+     .prod-grid           小卡网格容器
+       .prod-card         物品/动物小卡（button 或 div）
+         .prod-thumb      左侧图标位（emoji 或纯色块，不引入图片）
+         .prod-body       名称 + 副行
+         .prod-meta       右侧数值（价格/数量）
+     .prod-gauge          进度条（饲料/待收/队列）
+       .prod-gauge-bar    轨道
+       .prod-gauge-fill   填充（宽度由 UI 内联 style 控制）
+       .prod-gauge-text   覆盖文字
+     .prod-queue          工作队列容器
+       .prod-job          单个队列项
+         .prod-job-left / .prod-job-right
+     .prod-tag            工资/状态标签（chips）
+       .prod-tag.wage / .prod-tag.ready / .prod-tag.wait
+     .prod-cost           材料费用行
+       .prod-cost-item    单个材料（图标+数量），不足加 .is-short
+     .business-hint       底部说明文字
+
+   设计约束（已自查）
+     · 圆角统一 4px（低圆角，避免现代大圆角）
+     · 纸色 #fbf5e6 族 + 木框 #8c673f 族 + 黄铜 #a8843c 族，与 art-theme 同源
+     · 触控：桌面按钮 min-height 36px；pointer:coarse / <=720px 提到 44px
+     · 无外部字体（沿用系统栈）、无 url()、无 @font-face、无动画闪烁
+     · 不定位到 #gameStage 边缘、不覆盖 canvas 区域（面板自身负责定位）
+   ========================================================================== */
+
+/* ------------------------------------------------------------- 1. 面板根 */
+.business-panel{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:12px;
+  color:#33452f;
+  font-size:12px;
+  line-height:1.55;
+}
+.business-panel *{box-sizing:border-box}
+.business-panel h3{
+  margin:0;
+  font-size:13px;
+  font-weight:650;
+  color:#2c4133;
+  letter-spacing:.3px;
+}
+.business-panel p{margin:0}
+
+/* ------------------------------------------------------------- 2. 页签 */
+.business-tabs{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:4px;
+  padding:4px;
+  background:#f0e8d2;
+  border:1px solid #d3c3a0;
+  border-radius:4px;
+  box-shadow:inset 0 1px 0 #fffaf0;
+}
+.business-tab{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-height:36px;
+  padding:6px 4px;
+  border:1px solid transparent;
+  border-radius:4px;
+  background:#fbf5e6;
+  color:#6d6a53;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background .12s,border-color .12s,color .12s;
+}
+.business-tab:hover:not([aria-selected="true"]):not(:disabled){
+  background:#fdf9ef;
+  border-color:#cbb590;
+}
+/* 选中页签 = 黄铜压边，与 art-theme 的工具栏选中态同语言 */
+.business-tab[aria-selected="true"]{
+  background:#fdf1cf;
+  border-color:#a8843c;
+  color:#5c4718;
+  box-shadow:0 0 0 1px #dfc684 inset,0 2px 0 #a8843c;
+}
+.business-tab:disabled{opacity:.45;cursor:not-allowed}
+.business-tab .prod-count{
+  font-size:10px;
+  font-weight:500;
+  opacity:.7;
+  font-variant-numeric:tabular-nums;
+}
+
+/* ------------------------------------------------------------- 3. 区块 */
+.business-section{
+  padding:10px 11px;
+  background:#fdf9ec;
+  border:1px solid #e0d5b9;
+  border-radius:4px;
+  box-shadow:0 1px 0 #fff inset;
+}
+.business-section + .business-section{margin-top:0}
+.business-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:8px;
+  padding-bottom:6px;
+  border-bottom:1px dashed #ddd1b0;
+}
+.business-head > span,
+.business-head > small{
+  font-size:10px;
+  color:#948d74;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+/* ------------------------------------------------------- 4. 物品小卡网格 */
+.prod-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(132px,1fr));
+  gap:6px;
+}
+/* 动物卡可稍宽 */
+.prod-grid.is-animals{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+
+.prod-card{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:52px;
+  padding:6px 8px;
+  text-align:left;
+  background:#fbf6e8;
+  border:1px solid #e2d7bb;
+  border-bottom:2px solid #cfc1a0;
+  border-radius:4px;
+  color:#3c4a3a;
+  cursor:default;
+  transition:background .12s,border-color .12s;
+}
+button.prod-card{cursor:pointer;min-height:36px}
+button.prod-card:hover:not(:disabled){
+  background:#fdfaf0;
+  border-color:#c4b087;
+  border-bottom-color:#b39a6c;
+}
+button.prod-card:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+  background:#f4efdf;
+}
+.prod-card.is-active{
+  background:#fdf3d6;
+  border-color:#a8843c;
+  border-bottom-color:#a8843c;
+  box-shadow:inset 0 0 0 1px #e3cb90;
+}
+
+.prod-thumb{
+  flex:0 0 auto;
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:32px;
+  font-size:18px;
+  line-height:1;
+  background:#f4ecd8;
+  border:1px solid #e2d6b6;
+  border-radius:4px;
+  /* emoji 在部分系统带彩色，用低饱和滤镜压住抢色 */
+  filter:saturate(.9);
+}
+.prod-thumb.is-empty{background:#efe7d2;border-style:dashed;color:#b0a68a;font-size:14px}
+
+.prod-body{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+.prod-name{
+  font-size:12px;
+  font-weight:600;
+  color:#33452f;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.prod-sub{
+  font-size:10px;
+  color:#948d74;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.prod-meta{
+  flex:0 0 auto;
+  text-align:right;
+  font-size:13px;
+  font-weight:650;
+  color:#2f4231;
+  font-variant-numeric:tabular-nums;
+}
+.prod-meta small{
+  display:block;
+  font-size:9px;
+  font-weight:500;
+  color:#9a9278;
+}
+.prod-meta.is-gold{color:#8a6a23}
+
+
+/* --------------------------------------------------------- 5. 进度条（饲料） */
+.prod-gauge{
+  position:relative;
+  height:16px;
+  border-radius:4px;
+  background:#e8dfc6;
+  border:1px solid #d5c6a3;
+  box-shadow:inset 0 1px 2px rgba(90,74,42,.18);
+  overflow:hidden;
+}
+.prod-gauge-fill{
+  position:absolute;
+  inset:1px auto 1px 1px;
+  width:0;
+  border-radius:2px;
+  background:linear-gradient(180deg,#a6c977,#6f9a52);
+  box-shadow:inset 0 -2px 0 rgba(52,84,40,.2),inset 0 1px 0 rgba(255,255,255,.3);
+  transition:width .18s ease-out;
+}
+/* 低量：转成麦秆黄，不闪烁不脉冲 */
+.prod-gauge.is-low .prod-gauge-fill{background:linear-gradient(180deg,#e8c377,#c69a43)}
+/* 空：灰褐 */
+.prod-gauge.is-empty .prod-gauge-fill{background:linear-gradient(180deg,#c3b79b,#a8997a)}
+.prod-gauge-text{
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  font-size:10px;
+  font-weight:650;
+  color:#3f5138;
+  text-shadow:0 1px 0 rgba(255,255,255,.6);
+  font-variant-numeric:tabular-nums;
+  pointer-events:none;
+}
+.prod-gauge-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.prod-gauge-row .prod-gauge{flex:1;min-width:0}
+.prod-gauge-row > strong{
+  font-size:12px;
+  color:#2f4231;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+/* --------------------------------------------------------- 6. 工作队列 */
+.prod-queue{display:flex;flex-direction:column;gap:4px}
+.prod-job{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:40px;
+  padding:6px 8px;
+  background:#f9f3e3;
+  border:1px solid #e2d7bb;
+  border-left:3px solid #cbb590;
+  border-radius:4px;
+}
+.prod-job.is-ready{
+  border-left-color:#7f9a63;
+  background:#f6f4e4;
+}
+.prod-job.is-wait{border-left-color:#c9b077}
+.prod-job-left{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+  min-width:0;
+}
+.prod-job-left strong{
+  font-size:12px;
+  font-weight:600;
+  color:#33452f;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.prod-job-left small{font-size:10px;color:#948d74}
+.prod-job-right{
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.prod-queue-empty{
+  padding:10px;
+  text-align:center;
+  font-size:11px;
+  color:#9c9276;
+  background:#f7f1e0;
+  border:1px dashed #ddd0ae;
+  border-radius:4px;
+}
+
+/* --------------------------------------------------------- 7. 标签 chips */
+.prod-tag{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  min-height:20px;
+  padding:1px 7px;
+  border-radius:4px;
+  font-size:10px;
+  font-weight:600;
+  line-height:1.4;
+  white-space:nowrap;
+  border:1px solid #d8c9a5;
+  background:#f5efdd;
+  color:#6d6a53;
+  font-variant-numeric:tabular-nums;
+}
+/* 工资：黄铜 */
+.prod-tag.wage{
+  background:#f8eccb;
+  border-color:#d9bf85;
+  color:#7d6428;
+}
+/* 可收：草绿 */
+.prod-tag.ready{
+  background:#eaf1d8;
+  border-color:#b6c795;
+  color:#4c6543;
+}
+/* 等待/未就绪：灰褐 */
+.prod-tag.wait{
+  background:#f0ebdc;
+  border-color:#d6cbaf;
+  color:#8d8771;
+}
+/* 不足：屋瓦红 */
+.prod-tag.short{
+  background:#f8e6e1;
+  border-color:#dfb3a8;
+  color:#9c5149;
+}
+.prod-tag.is-strong{font-size:11px;min-height:22px;padding:2px 8px}
+
+/* --------------------------------------------------------- 8. 材料费用 */
+.prod-cost{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 8px;
+  margin-top:7px;
+  padding-top:7px;
+  border-top:1px dashed #e2d7ba;
+}
+.prod-cost-item{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:2px 6px;
+  border-radius:4px;
+  background:#f4eeda;
+  border:1px solid #e3d7b7;
+  font-size:10px;
+  color:#6b6250;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.prod-cost-item .prod-cost-ico{font-size:12px;line-height:1}
+.prod-cost-item.is-short{
+  background:#f9e7e2;
+  border-color:#dcb0a5;
+  color:#9c5149;
+  font-weight:600;
+}
+.prod-cost-item.is-ok{
+  background:#eff3e0;
+  border-color:#c2d0a5;
+  color:#4f6647;
+}
+.prod-cost-total{
+  margin-left:auto;
+  font-size:11px;
+  color:#8a6a23;
+  font-weight:650;
+  font-variant-numeric:tabular-nums;
+}
+
+/* --------------------------------------------------------- 9. 按钮/操作 */
+.business-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:8px;
+}
+.business-actions button{
+  min-height:36px;
+  padding:7px 12px;
+  font-size:12px;
+  border-radius:4px;
+  border:1px solid #d2c3a2;
+  border-bottom:2px solid #bca983;
+  background:#fbf5e6;
+  color:#33452f;
+  box-shadow:0 1px 0 #fff inset;
+  transition:background .12s,border-color .12s;
+}
+.business-actions button:hover:not(:disabled){
+  background:#fdf9ef;
+  border-color:#c1a86f;
+}
+.business-actions button:active:not(:disabled){
+  transform:translateY(1px);
+  border-bottom-width:1px;
+}
+.business-actions button.prod-primary{
+  background:linear-gradient(180deg,#3a6b4f,#2c5340);
+  border-color:#24483a;
+  border-bottom-color:#1c3a2d;
+  color:#f8f2df;
+  font-weight:600;
+}
+.business-actions button.prod-primary:hover:not(:disabled){
+  background:linear-gradient(180deg,#427757,#315c46);
+}
+.business-actions button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+  box-shadow:none;
+}
+.business-actions .prod-route{
+  margin-left:auto;
+  font-size:11px;
+}
+
+/* --------------------------------------------------------- 10. 提示文案 */
+.business-hint{
+  font-size:10px;
+  color:#8d9179;
+  line-height:1.7;
+  padding:6px 8px;
+  background:#f7f1e0;
+  border-left:3px solid #d6b978;
+  border-radius:0 4px 4px 0;
+}
+.business-hint.is-warn{
+  background:#f8e9e4;
+  border-left-color:#c96c50;
+  color:#8f5a4c;
+}
+
+/* 距离不足等禁用态的统一说明 */
+.business-locked{
+  opacity:.55;
+  filter:grayscale(.25);
+  pointer-events:none;
+}
+
+/* ================= 11. 触控尺寸：桌面 36 / 小屏 44 ================= */
+/* 桌面（精确指针）已经统一 36px；粗指针与小屏提到 44px */
+@media (pointer:coarse){
+  .business-tab,
+  .business-actions button,
+  button.prod-card{min-height:44px}
+  .prod-card{padding:8px}
+  .prod-thumb{width:36px;height:36px;font-size:20px}
+}
+@media (max-width:720px){
+  .business-panel{padding:10px;gap:8px;font-size:11.5px}
+  .business-tab{min-height:44px;font-size:11.5px}
+  .business-actions button{min-height:44px;font-size:11.5px;padding:9px 12px}
+  button.prod-card{min-height:44px}
+  .prod-grid{grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:5px}
+  .prod-grid.is-animals{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+  .prod-thumb{width:34px;height:34px;font-size:19px}
+  .business-section{padding:9px}
+  .prod-gauge{height:15px}
+  .prod-job{min-height:44px}
+  .business-hint{font-size:10px}
+}
+@media (max-width:420px){
+  .business-panel{padding:8px;gap:7px}
+  .business-tabs{grid-template-columns:repeat(3,minmax(0,1fr));padding:3px;gap:3px}
+  .business-tab{font-size:11px;padding:6px 2px;gap:2px}
+  .business-tab .prod-count{display:none}
+  .prod-grid,
+  .prod-grid.is-animals{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .prod-card{min-height:48px;padding:7px 6px;gap:6px}
+  .prod-thumb{width:30px;height:30px;font-size:17px}
+  .prod-name{font-size:11.5px}
+  .prod-sub{font-size:9.5px}
+  .prod-meta{font-size:12px}
+  .prod-meta small{font-size:8.5px}
+  .business-head h3{font-size:12.5px}
+  .business-actions button{flex:1;min-width:0}
+  .business-actions .prod-route{margin-left:0;flex-basis:100%;text-align:center}
+  .prod-job{padding:6px 7px;gap:6px}
+  .prod-job-left strong{font-size:11.5px}
+  .prod-job-left small{font-size:9.5px}
+  .prod-gauge-text{font-size:9.5px}
+}
+
+/* ================= 12. 偏好开关 ================= */
+@media (prefers-reduced-motion:reduce){
+  .business-panel *,
+  .business-panel *::before,
+  .business-panel *::after{animation:none!important;transition:none!important}
+}
+@media (prefers-contrast:more){
+  .business-section,
+  .prod-card,
+  .prod-job{border-color:#a89a78}
+  .prod-sub,.business-head>span,.business-head>small{color:#6d6450}
+  .business-hint{color:#5f6650}
+}
+
+/* ================= 13. 窄高面板兜底（不改外部布局） ================= */
+/* 面板高度很小时（横屏手机），压缩纵向留白，仍保持 44 触控 */
+@media (max-height:520px){
+  .business-panel{padding:8px;gap:6px}
+  .business-section{padding:8px}
+  .business-head{margin-bottom:6px;padding-bottom:4px}
+  .prod-card{min-height:44px;padding:5px 7px}
+  .prod-gauge{height:14px}
+  .business-hint{padding:4px 7px;line-height:1.55}
+}

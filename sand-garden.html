@@ -494,6 +494,556 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
 @media(max-width:480px) and (orientation:portrait){.hud-menu{top:96px;right:7px;max-width:100px;display:grid;grid-template-columns:1fr 1fr}.hud-menu button{min-height:36px}.game-hud .touch-pad{display:grid}.in-game-panel{top:150px;bottom:130px}.hud-bottom{width:65vw}.game-hud .daybar,.game-hud .energy-row{width:calc(100% - 14px)}.hud-menu{z-index:9}}
 @media(max-height:470px) and (orientation:landscape){.game-hud .daybar{width:245px}.game-hud .energy-row{width:245px}.hud-menu button{min-height:31px}.hud-bottom .map-caption{display:none}.hud-bottom .tool{min-height:38px}.hud-bottom .tool svg{width:18px;height:18px}.hud-bottom .tool>span{display:none}.hud-bottom .action-row{margin-top:2px}.hud-bottom .action-row button{min-height:29px;padding:3px}.in-game-panel{top:50px;bottom:88px}.game-hud .energy-row{top:53px}.game-hud .touch-pad button{width:36px;height:30px;min-height:30px}}
 .game-hud button,.game-hud .daybar,.game-hud .energy-row,.hud-bottom .toolbelt,.hud-bottom .map-caption{border-radius:4px}.in-game-panel,#gameStage #dialog{border-radius:8px}.game-hud .daybar,.hud-menu button{box-shadow:0 2px 0 #503d2070}.hud-bottom .toolbelt{background:#a97d51ec;border-color:#7c5a38}.game-hud .daybar{background:#fbf3de}.in-game-panel .shop-row button{background:#f5e7be}
+
+/* ==========================================================================
+   栖砂·田园记 2.3 — 生产经营面板业务样式  production.css  (task-23 / art)
+   ==========================================================================
+   定位：只负责「经营」面板内部的业务组件外观，不改任何外部布局。
+   加载：由 build 接在 style.css / art-theme.css / immersive.css 之后，
+        作为独立样式段或同段末尾均可（本文件不含 @media 主布局改写）。
+
+   命名约定（Lead 接入 UI 请按此产出 DOM）
+     .business-panel      经营面板根节点（建议放在 .in-game-panel > .menu-content 内）
+     .business-tabs       页签容器
+       .business-tab      单个页签（button，aria-selected 控制选中）
+     .business-section    一段区块（对应一个 <section>）
+     .business-head       区块标题行（h3 + 右侧计数/提示）
+     .prod-grid           小卡网格容器
+       .prod-card         物品/动物小卡（button 或 div）
+         .prod-thumb      左侧图标位（emoji 或纯色块，不引入图片）
+         .prod-body       名称 + 副行
+         .prod-meta       右侧数值（价格/数量）
+     .prod-gauge          进度条（饲料/待收/队列）
+       .prod-gauge-bar    轨道
+       .prod-gauge-fill   填充（宽度由 UI 内联 style 控制）
+       .prod-gauge-text   覆盖文字
+     .prod-queue          工作队列容器
+       .prod-job          单个队列项
+         .prod-job-left / .prod-job-right
+     .prod-tag            工资/状态标签（chips）
+       .prod-tag.wage / .prod-tag.ready / .prod-tag.wait
+     .prod-cost           材料费用行
+       .prod-cost-item    单个材料（图标+数量），不足加 .is-short
+     .business-hint       底部说明文字
+
+   设计约束（已自查）
+     · 圆角统一 4px（低圆角，避免现代大圆角）
+     · 纸色 #fbf5e6 族 + 木框 #8c673f 族 + 黄铜 #a8843c 族，与 art-theme 同源
+     · 触控：桌面按钮 min-height 36px；pointer:coarse / <=720px 提到 44px
+     · 无外部字体（沿用系统栈）、无 url()、无 @font-face、无动画闪烁
+     · 不定位到 #gameStage 边缘、不覆盖 canvas 区域（面板自身负责定位）
+   ========================================================================== */
+
+/* ------------------------------------------------------------- 1. 面板根 */
+.business-panel{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:12px;
+  color:#33452f;
+  font-size:12px;
+  line-height:1.55;
+}
+.business-panel *{box-sizing:border-box}
+.business-panel h3{
+  margin:0;
+  font-size:13px;
+  font-weight:650;
+  color:#2c4133;
+  letter-spacing:.3px;
+}
+.business-panel p{margin:0}
+
+/* ------------------------------------------------------------- 2. 页签 */
+.business-tabs{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:4px;
+  padding:4px;
+  background:#f0e8d2;
+  border:1px solid #d3c3a0;
+  border-radius:4px;
+  box-shadow:inset 0 1px 0 #fffaf0;
+}
+.business-tab{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-height:36px;
+  padding:6px 4px;
+  border:1px solid transparent;
+  border-radius:4px;
+  background:#fbf5e6;
+  color:#6d6a53;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background .12s,border-color .12s,color .12s;
+}
+.business-tab:hover:not([aria-selected="true"]):not(:disabled){
+  background:#fdf9ef;
+  border-color:#cbb590;
+}
+/* 选中页签 = 黄铜压边，与 art-theme 的工具栏选中态同语言 */
+.business-tab[aria-selected="true"]{
+  background:#fdf1cf;
+  border-color:#a8843c;
+  color:#5c4718;
+  box-shadow:0 0 0 1px #dfc684 inset,0 2px 0 #a8843c;
+}
+.business-tab:disabled{opacity:.45;cursor:not-allowed}
+.business-tab .prod-count{
+  font-size:10px;
+  font-weight:500;
+  opacity:.7;
+  font-variant-numeric:tabular-nums;
+}
+
+/* ------------------------------------------------------------- 3. 区块 */
+.business-section{
+  padding:10px 11px;
+  background:#fdf9ec;
+  border:1px solid #e0d5b9;
+  border-radius:4px;
+  box-shadow:0 1px 0 #fff inset;
+}
+.business-section + .business-section{margin-top:0}
+.business-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:8px;
+  padding-bottom:6px;
+  border-bottom:1px dashed #ddd1b0;
+}
+.business-head > span,
+.business-head > small{
+  font-size:10px;
+  color:#948d74;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+/* ------------------------------------------------------- 4. 物品小卡网格 */
+.prod-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(132px,1fr));
+  gap:6px;
+}
+/* 动物卡可稍宽 */
+.prod-grid.is-animals{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+
+.prod-card{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:52px;
+  padding:6px 8px;
+  text-align:left;
+  background:#fbf6e8;
+  border:1px solid #e2d7bb;
+  border-bottom:2px solid #cfc1a0;
+  border-radius:4px;
+  color:#3c4a3a;
+  cursor:default;
+  transition:background .12s,border-color .12s;
+}
+button.prod-card{cursor:pointer;min-height:36px}
+button.prod-card:hover:not(:disabled){
+  background:#fdfaf0;
+  border-color:#c4b087;
+  border-bottom-color:#b39a6c;
+}
+button.prod-card:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+  background:#f4efdf;
+}
+.prod-card.is-active{
+  background:#fdf3d6;
+  border-color:#a8843c;
+  border-bottom-color:#a8843c;
+  box-shadow:inset 0 0 0 1px #e3cb90;
+}
+
+.prod-thumb{
+  flex:0 0 auto;
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:32px;
+  font-size:18px;
+  line-height:1;
+  background:#f4ecd8;
+  border:1px solid #e2d6b6;
+  border-radius:4px;
+  /* emoji 在部分系统带彩色，用低饱和滤镜压住抢色 */
+  filter:saturate(.9);
+}
+.prod-thumb.is-empty{background:#efe7d2;border-style:dashed;color:#b0a68a;font-size:14px}
+
+.prod-body{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+.prod-name{
+  font-size:12px;
+  font-weight:600;
+  color:#33452f;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.prod-sub{
+  font-size:10px;
+  color:#948d74;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.prod-meta{
+  flex:0 0 auto;
+  text-align:right;
+  font-size:13px;
+  font-weight:650;
+  color:#2f4231;
+  font-variant-numeric:tabular-nums;
+}
+.prod-meta small{
+  display:block;
+  font-size:9px;
+  font-weight:500;
+  color:#9a9278;
+}
+.prod-meta.is-gold{color:#8a6a23}
+
+
+/* --------------------------------------------------------- 5. 进度条（饲料） */
+.prod-gauge{
+  position:relative;
+  height:16px;
+  border-radius:4px;
+  background:#e8dfc6;
+  border:1px solid #d5c6a3;
+  box-shadow:inset 0 1px 2px rgba(90,74,42,.18);
+  overflow:hidden;
+}
+.prod-gauge-fill{
+  position:absolute;
+  inset:1px auto 1px 1px;
+  width:0;
+  border-radius:2px;
+  background:linear-gradient(180deg,#a6c977,#6f9a52);
+  box-shadow:inset 0 -2px 0 rgba(52,84,40,.2),inset 0 1px 0 rgba(255,255,255,.3);
+  transition:width .18s ease-out;
+}
+/* 低量：转成麦秆黄，不闪烁不脉冲 */
+.prod-gauge.is-low .prod-gauge-fill{background:linear-gradient(180deg,#e8c377,#c69a43)}
+/* 空：灰褐 */
+.prod-gauge.is-empty .prod-gauge-fill{background:linear-gradient(180deg,#c3b79b,#a8997a)}
+.prod-gauge-text{
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  font-size:10px;
+  font-weight:650;
+  color:#3f5138;
+  text-shadow:0 1px 0 rgba(255,255,255,.6);
+  font-variant-numeric:tabular-nums;
+  pointer-events:none;
+}
+.prod-gauge-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.prod-gauge-row .prod-gauge{flex:1;min-width:0}
+.prod-gauge-row > strong{
+  font-size:12px;
+  color:#2f4231;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+/* --------------------------------------------------------- 6. 工作队列 */
+.prod-queue{display:flex;flex-direction:column;gap:4px}
+.prod-job{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:40px;
+  padding:6px 8px;
+  background:#f9f3e3;
+  border:1px solid #e2d7bb;
+  border-left:3px solid #cbb590;
+  border-radius:4px;
+}
+.prod-job.is-ready{
+  border-left-color:#7f9a63;
+  background:#f6f4e4;
+}
+.prod-job.is-wait{border-left-color:#c9b077}
+.prod-job-left{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+  min-width:0;
+}
+.prod-job-left strong{
+  font-size:12px;
+  font-weight:600;
+  color:#33452f;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.prod-job-left small{font-size:10px;color:#948d74}
+.prod-job-right{
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.prod-queue-empty{
+  padding:10px;
+  text-align:center;
+  font-size:11px;
+  color:#9c9276;
+  background:#f7f1e0;
+  border:1px dashed #ddd0ae;
+  border-radius:4px;
+}
+
+/* --------------------------------------------------------- 7. 标签 chips */
+.prod-tag{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  min-height:20px;
+  padding:1px 7px;
+  border-radius:4px;
+  font-size:10px;
+  font-weight:600;
+  line-height:1.4;
+  white-space:nowrap;
+  border:1px solid #d8c9a5;
+  background:#f5efdd;
+  color:#6d6a53;
+  font-variant-numeric:tabular-nums;
+}
+/* 工资：黄铜 */
+.prod-tag.wage{
+  background:#f8eccb;
+  border-color:#d9bf85;
+  color:#7d6428;
+}
+/* 可收：草绿 */
+.prod-tag.ready{
+  background:#eaf1d8;
+  border-color:#b6c795;
+  color:#4c6543;
+}
+/* 等待/未就绪：灰褐 */
+.prod-tag.wait{
+  background:#f0ebdc;
+  border-color:#d6cbaf;
+  color:#8d8771;
+}
+/* 不足：屋瓦红 */
+.prod-tag.short{
+  background:#f8e6e1;
+  border-color:#dfb3a8;
+  color:#9c5149;
+}
+.prod-tag.is-strong{font-size:11px;min-height:22px;padding:2px 8px}
+
+/* --------------------------------------------------------- 8. 材料费用 */
+.prod-cost{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 8px;
+  margin-top:7px;
+  padding-top:7px;
+  border-top:1px dashed #e2d7ba;
+}
+.prod-cost-item{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:2px 6px;
+  border-radius:4px;
+  background:#f4eeda;
+  border:1px solid #e3d7b7;
+  font-size:10px;
+  color:#6b6250;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.prod-cost-item .prod-cost-ico{font-size:12px;line-height:1}
+.prod-cost-item.is-short{
+  background:#f9e7e2;
+  border-color:#dcb0a5;
+  color:#9c5149;
+  font-weight:600;
+}
+.prod-cost-item.is-ok{
+  background:#eff3e0;
+  border-color:#c2d0a5;
+  color:#4f6647;
+}
+.prod-cost-total{
+  margin-left:auto;
+  font-size:11px;
+  color:#8a6a23;
+  font-weight:650;
+  font-variant-numeric:tabular-nums;
+}
+
+/* --------------------------------------------------------- 9. 按钮/操作 */
+.business-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:8px;
+}
+.business-actions button{
+  min-height:36px;
+  padding:7px 12px;
+  font-size:12px;
+  border-radius:4px;
+  border:1px solid #d2c3a2;
+  border-bottom:2px solid #bca983;
+  background:#fbf5e6;
+  color:#33452f;
+  box-shadow:0 1px 0 #fff inset;
+  transition:background .12s,border-color .12s;
+}
+.business-actions button:hover:not(:disabled){
+  background:#fdf9ef;
+  border-color:#c1a86f;
+}
+.business-actions button:active:not(:disabled){
+  transform:translateY(1px);
+  border-bottom-width:1px;
+}
+.business-actions button.prod-primary{
+  background:linear-gradient(180deg,#3a6b4f,#2c5340);
+  border-color:#24483a;
+  border-bottom-color:#1c3a2d;
+  color:#f8f2df;
+  font-weight:600;
+}
+.business-actions button.prod-primary:hover:not(:disabled){
+  background:linear-gradient(180deg,#427757,#315c46);
+}
+.business-actions button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+  box-shadow:none;
+}
+.business-actions .prod-route{
+  margin-left:auto;
+  font-size:11px;
+}
+
+/* --------------------------------------------------------- 10. 提示文案 */
+.business-hint{
+  font-size:10px;
+  color:#8d9179;
+  line-height:1.7;
+  padding:6px 8px;
+  background:#f7f1e0;
+  border-left:3px solid #d6b978;
+  border-radius:0 4px 4px 0;
+}
+.business-hint.is-warn{
+  background:#f8e9e4;
+  border-left-color:#c96c50;
+  color:#8f5a4c;
+}
+
+/* 距离不足等禁用态的统一说明 */
+.business-locked{
+  opacity:.55;
+  filter:grayscale(.25);
+  pointer-events:none;
+}
+
+/* ================= 11. 触控尺寸：桌面 36 / 小屏 44 ================= */
+/* 桌面（精确指针）已经统一 36px；粗指针与小屏提到 44px */
+@media (pointer:coarse){
+  .business-tab,
+  .business-actions button,
+  button.prod-card{min-height:44px}
+  .prod-card{padding:8px}
+  .prod-thumb{width:36px;height:36px;font-size:20px}
+}
+@media (max-width:720px){
+  .business-panel{padding:10px;gap:8px;font-size:11.5px}
+  .business-tab{min-height:44px;font-size:11.5px}
+  .business-actions button{min-height:44px;font-size:11.5px;padding:9px 12px}
+  button.prod-card{min-height:44px}
+  .prod-grid{grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:5px}
+  .prod-grid.is-animals{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+  .prod-thumb{width:34px;height:34px;font-size:19px}
+  .business-section{padding:9px}
+  .prod-gauge{height:15px}
+  .prod-job{min-height:44px}
+  .business-hint{font-size:10px}
+}
+@media (max-width:420px){
+  .business-panel{padding:8px;gap:7px}
+  .business-tabs{grid-template-columns:repeat(3,minmax(0,1fr));padding:3px;gap:3px}
+  .business-tab{font-size:11px;padding:6px 2px;gap:2px}
+  .business-tab .prod-count{display:none}
+  .prod-grid,
+  .prod-grid.is-animals{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .prod-card{min-height:48px;padding:7px 6px;gap:6px}
+  .prod-thumb{width:30px;height:30px;font-size:17px}
+  .prod-name{font-size:11.5px}
+  .prod-sub{font-size:9.5px}
+  .prod-meta{font-size:12px}
+  .prod-meta small{font-size:8.5px}
+  .business-head h3{font-size:12.5px}
+  .business-actions button{flex:1;min-width:0}
+  .business-actions .prod-route{margin-left:0;flex-basis:100%;text-align:center}
+  .prod-job{padding:6px 7px;gap:6px}
+  .prod-job-left strong{font-size:11.5px}
+  .prod-job-left small{font-size:9.5px}
+  .prod-gauge-text{font-size:9.5px}
+}
+
+/* ================= 12. 偏好开关 ================= */
+@media (prefers-reduced-motion:reduce){
+  .business-panel *,
+  .business-panel *::before,
+  .business-panel *::after{animation:none!important;transition:none!important}
+}
+@media (prefers-contrast:more){
+  .business-section,
+  .prod-card,
+  .prod-job{border-color:#a89a78}
+  .prod-sub,.business-head>span,.business-head>small{color:#6d6450}
+  .business-hint{color:#5f6650}
+}
+
+/* ================= 13. 窄高面板兜底（不改外部布局） ================= */
+/* 面板高度很小时（横屏手机），压缩纵向留白，仍保持 44 触控 */
+@media (max-height:520px){
+  .business-panel{padding:8px;gap:6px}
+  .business-section{padding:8px}
+  .business-head{margin-bottom:6px;padding-bottom:4px}
+  .prod-card{min-height:44px;padding:5px 7px}
+  .prod-gauge{height:14px}
+  .business-hint{padding:4px 7px;line-height:1.55}
+}
 </style>
 </head>
 <body>
@@ -510,8 +1060,10 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
 <main id="farmLayout" class="layout" hidden>
 <section id="gameStage" class="map-frame" aria-label="全屏农场游戏">
 <canvas id="farm" width="960" height="540" tabindex="0" aria-label="农场地图。方向键或WASD移动，空格使用工具，E交互；1至6选择工具，Tab打开背包，J打开任务，M打开村庄，Esc关闭菜单。"></canvas>
-<div class="game-hud"> <div class="daybar"><div><span class="eyebrow">你的田园日常</span><div class="day-title"><strong id="dayLabel">春 · 第 1 天</strong><span id="weatherLabel">晴天</span></div></div><div class="clock"><span id="clockLabel">06:00</span><span class="subtle">田园时间</span></div><div class="wallet"><span class="coin" aria-hidden="true"></span><strong id="moneyLabel">100</strong><small>G</small></div></div> <div class="energy-row"><label for="energyBar">体力</label><meter id="energyBar" min="0" max="100" value="100">100</meter><span id="energyLabel">100 / 100</span><button id="pauseBtn" aria-pressed="false">暂停</button></div><nav class="hud-menu" aria-label="游戏内菜单"><button data-panel="inventory" aria-label="打开背包与种子">背包 <kbd>Tab</kbd></button><button data-panel="village" aria-label="打开村庄向导">村庄 <kbd>M</kbd></button><button data-panel="quests" aria-label="打开任务手记">任务 <kbd>J</kbd></button><button data-panel="system" aria-label="打开存档与设置">系统</button><button id="fullscreenBtn" aria-label="切换游戏全屏">全屏</button></nav>
-<div id="inGamePanel" class="in-game-panel" hidden><header><h2 id="panelTitle">田园手记</h2><button id="closePanelBtn" aria-label="关闭游戏菜单">×</button></header><div id="inventoryPanel" class="menu-content" hidden> <section class="note"><div class="section-title"><h2>种子口袋</h2><span>选择种植</span></div><div id="seedChoices" class="seed-choices"></div><p class="muted">下雨会自动浇田。萝卜最快，只需 2 个浇水生长日。</p></section> <section class="note"><div class="section-title"><h2>随身收获</h2><span id="bagCount">0 件</span></div><div id="inventory" class="inventory"></div><div class="resource-row"><span id="woodLabel">木材 0</span><span id="stoneLabel">石料 0</span></div><p class="muted">带到屋旁的出货箱，换成明天的种子钱。</p></section></div><div id="villagePanel" class="menu-content" hidden> <section class="note"><div class="section-title"><h2>村庄向导</h2><span>点击前往</span></div><div id="destinationList" class="destinations"><button data-go="home">⌂ 小屋 <small>睡觉恢复</small></button><button data-go="shop">杂货铺 <small>买种子 / 升级</small></button><button data-go="bin">出货箱 <small>卖出收成</small></button><button data-go="npc">阿禾 <small>领取委托</small></button><button data-go="well">石井 <small>每日休息一次</small></button></div></section></div><div id="questsPanel" class="menu-content" hidden> <section class="note quest-note"><div class="section-title"><h2>村民委托</h2><span id="questCount">0 / 3</span></div><div id="questList"></div><p class="muted">完成后前往发起委托的村民处交付。交付型任务会扣除对应材料。</p></section></div><div id="systemPanel" class="menu-content" hidden> <nav class="header-actions" aria-label="存档与帮助"><button id="saveBtn">保存</button><button id="loadBtn">读档</button><button id="exportBtn">导出存档</button><button id="importBtn">导入存档</button><button id="albumBtn" class="help-button" aria-label="返回农场封面">⌂</button><button id="helpBtn" class="help-button" aria-label="打开玩法说明">?</button><input type="file" id="importFile" accept=".json,application/json" hidden></nav><p class="muted">游戏菜单打开时暂停时间。全屏模式按 Esc 可退出，其他浏览器快捷键仍可使用。</p></div></div><div class="hud-bottom"> <div class="map-caption"><span id="contextHint">向下走到田地，先用锄头开垦。</span><span id="positionLabel">12, 8</span></div> <div class="toolbelt" role="toolbar" aria-label="农具栏">
+<div class="game-hud"> <div class="daybar"><div><span class="eyebrow">你的田园日常</span><div class="day-title"><strong id="dayLabel">春 · 第 1 天</strong><span id="weatherLabel">晴天</span></div></div><div class="clock"><span id="clockLabel">06:00</span><span class="subtle">田园时间</span></div><div class="wallet"><span class="coin" aria-hidden="true"></span><strong id="moneyLabel">100</strong><small>G</small></div></div> <div class="energy-row"><label for="energyBar">体力</label><meter id="energyBar" min="0" max="100" value="100">100</meter><span id="energyLabel">100 / 100</span><span id="fpsLabel" class="hud-fps" aria-label="实际渲染帧率">— FPS</span><button id="pauseBtn" aria-pressed="false">暂停</button></div><nav class="hud-menu" aria-label="游戏内菜单"><button data-panel="inventory" aria-label="打开背包与种子">背包 <kbd>Tab</kbd></button><button data-panel="village" aria-label="打开村庄向导">村庄 <kbd>M</kbd></button><button data-panel="business" aria-label="打开生产经营面板">经营 <kbd>N</kbd></button><button data-panel="quests" aria-label="打开任务手记">任务 <kbd>J</kbd></button><button data-panel="system" aria-label="打开存档与设置">系统</button><button id="fullscreenBtn" aria-label="切换游戏全屏">全屏</button></nav>
+<div id="inGamePanel" class="in-game-panel" hidden><header><h2 id="panelTitle">田园手记</h2><button id="closePanelBtn" aria-label="关闭游戏菜单">×</button></header><div id="inventoryPanel" class="menu-content" hidden> <section class="note"><div class="section-title"><h2>种子口袋</h2><span>选择种植</span></div><div id="seedChoices" class="seed-choices"></div><p class="muted">下雨会自动浇田。萝卜最快，只需 2 个浇水生长日。</p></section> <section class="note"><div class="section-title"><h2>随身收获</h2><span id="bagCount">0 件</span></div><div id="inventory" class="inventory"></div><div class="resource-row"><span id="woodLabel">木材 0</span><span id="stoneLabel">石料 0</span></div><p class="muted">带到屋旁的出货箱，换成明天的种子钱。</p></section></div><div id="villagePanel" class="menu-content" hidden> <section class="note"><div class="section-title"><h2>村庄向导</h2><span>点击前往</span></div><div id="destinationList" class="destinations"><button data-go="home">⌂ 小屋 <small>睡觉恢复</small></button><button data-go="shop">杂货铺 <small>买种子 / 升级</small></button><button data-go="bin">出货箱 <small>卖出收成</small></button><button data-go="npc">阿禾 <small>领取委托</small></button><button data-go="well">石井 <small>每日休息一次</small></button></div></section></div><div id="businessPanel" class="menu-content" hidden><div id="businessBody"></div></div><div id="questsPanel" class="menu-content" hidden> <section class="note quest-note"><div class="section-title"><h2>村民委托</h2><span id="questCount">0 / 3</span></div><div id="questList"></div><p class="muted">完成后前往发起委托的村民处交付。交付型任务会扣除对应材料。</p></section></div><div id="systemPanel" class="menu-content" hidden> <nav class="header-actions" aria-label="存档与帮助"><button id="saveBtn">保存</button><button id="loadBtn">读档</button><button id="exportBtn">导出存档</button><button id="importBtn">导入存档</button><button id="albumBtn" class="help-button" aria-label="返回农场封面">⌂</button><button id="helpBtn" class="help-button" aria-label="打开玩法说明">?</button><input type="file" id="importFile" accept=".json,application/json" hidden></nav><p class="muted">游戏菜单打开时暂停时间。全屏模式按 Esc 可退出，其他浏览器快捷键仍可使用。</p></div></div><div class="hud-bottom">
+ <div class="map-caption"><span id="contextHint">向下走到田地，先用锄头开垦。</span><span id="positionLabel">12, 8</span></div>
+ <div class="toolbelt" role="toolbar" aria-label="农具栏">
   <button class="tool active" data-tool="hoe" aria-pressed="true"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M12 4h4v24h-4z" fill="#b68a55"/><path d="M5 5h19v5H5zM21 8h5v7h-5z" fill="#a9bec5"/></svg><span>锄头</span><kbd>1</kbd></button>
   <button class="tool" data-tool="seed" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 9h18v20H7z" fill="#dbc499"/><path d="M9 3h14v7H9z" fill="#a58157"/><path d="M14 15h4v10h-4zM10 14h5v5h-5zM18 11h5v6h-5z" fill="#6e9a51"/></svg><span>种子</span><kbd>2</kbd></button>
   <button class="tool" data-tool="water" aria-pressed="false"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 12h15v15H4zM18 15l10-6 2 5-12 7z" fill="#88bac2"/><path d="M7 5h10v8h-3V8h-4v5H7z" fill="#c3ded8"/></svg><span>水壶</span><kbd>3</kbd></button>
@@ -563,7 +1115,10 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     miller: { x: 31, y: 8, name: '麦叔' },
     ranger: { x: 36, y: 6, name: '林岚' },
     miner: { x: 27, y: 26, name: '石川' },
-    florist: { x: 20, y: 26, name: '小葵' }
+    florist: { x: 20, y: 26, name: '小葵' },
+    ranch: { x: 2, y: 8, name: '牧场' },
+    workshop: { x: 25, y: 10, name: '加工坊' },
+    guild: { x: 28, y: 7, name: '帮手驿站' }
   };
 
   var NPCS = {
@@ -611,6 +1166,46 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     { id: 'flower-festival', name: '花开时节', npc: 'florist', description: '为花节采收 40 次收成，让村里开满花。', stat: 'harvested', target: 40, reward: 250, requiresQuest: 'colorful-harvest' }
   ];
 
+  // ---- 2.3 生产经营：产品 / 物品 / 配方 / 建筑 / 帮手 ----
+
+  var PRODUCTS = {
+    egg: { name: '鸡蛋', sellPrice: 25 },
+    milk: { name: '牛奶', sellPrice: 60 },
+    mayo: { name: '蛋黄酱', sellPrice: 80 },
+    cheese: { name: '奶酪', sellPrice: 180 },
+    jam: { name: '果酱', sellPrice: 180 }
+  };
+
+  var ITEMS = {};
+  Object.keys(CROPS).forEach(function (id) { ITEMS[id] = CROPS[id]; });
+  Object.keys(PRODUCTS).forEach(function (id) { ITEMS[id] = PRODUCTS[id]; });
+
+  var RECIPES = {
+    mayo: { name: '蛋黄酱', ingredients: { egg: 2 }, days: 1 },
+    cheese: { name: '奶酪', ingredients: { milk: 2 }, days: 1 },
+    jam: { name: '果酱', ingredients: { berry: 2 }, days: 1 }
+  };
+
+  var BUILDINGS = {
+    coop: { name: '鸡舍', money: 120, wood: 6, stone: 0 },
+    barn: { name: '牛棚', money: 300, wood: 12, stone: 6 },
+    workshop: { name: '加工坊', money: 180, wood: 6, stone: 4 }
+  };
+
+  var HELPERS = {
+    waterer: { name: '浇水帮手', hirePrice: 50, wage: 25, capacity: 12 },
+    harvester: { name: '采收帮手', hirePrice: 60, wage: 30, capacity: 8 }
+  };
+
+  var ANIMALS = {
+    chicken: { name: '鸡', price: 80, facility: 'coop', cap: 6, product: 'egg' },
+    cow: { name: '牛', price: 220, facility: 'barn', cap: 3, product: 'milk' }
+  };
+
+  var MAX_JOBS = 3;
+  var JOB_QTY_MAX = 5;
+  var FEED_PRICE = 5;
+
   // ---------------------------------------------------------------- 地图规则（2.2）
 
   var HOUSE = { x0: 3, x1: 8, y0: 3, y1: 6 };   // 不可走
@@ -621,6 +1216,9 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
   var ROAD_H = { y: 8, x0: 2, x1: 40 };
   var ROAD_V1 = { x: 18, y0: 8, y1: 28 };
   var ROAD_V2 = { x: 28, y0: 8, y1: 28 };
+  var RANCH_BUILDING = { x0: 0, x1: 2, y0: 4, y1: 7 }; // 牧场建筑，不可走
+  var RIVER = { x0: 40, x1: 41, y0: 10, y1: 28 };      // 河道，只有 y20 是桥
+  var BRIDGE_Y = 20;
 
   var START = { x: 12, y: 8, facing: 'down' };
   var START_DAY_MINUTES = 6 * 60;   // 06:00
@@ -654,6 +1252,8 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
 
   function isHouse(x, y) { return x >= HOUSE.x0 && x <= HOUSE.x1 && y >= HOUSE.y0 && y <= HOUSE.y1; }
   function isShop(x, y) { return x >= SHOP.x0 && x <= SHOP.x1 && y >= SHOP.y0 && y <= SHOP.y1; }
+  function isRanchBuilding(x, y) { return inRect(RANCH_BUILDING, x, y); }
+  function isRiver(x, y) { return inRect(RIVER, x, y) && y !== BRIDGE_Y; }
   function isPond(x, y) {
     var dx = (x - POND.cx) / POND.rx;
     var dy = (y - POND.cy) / POND.ry;
@@ -671,10 +1271,22 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
   // 纯地形判定：建筑 > 水面 > 道路 > 草地（池塘压在 x=28 道路上时以水面为准）
   function terrainAt(x, y) {
     if (!inBounds(x, y)) return 'outside';
-    if (isHouse(x, y) || isShop(x, y)) return 'building';
+    if (isHouse(x, y) || isShop(x, y) || isRanchBuilding(x, y)) return 'building';
     if (isPond(x, y)) return 'water';
+    if (inRect(RIVER, x, y)) return y === BRIDGE_Y ? 'path' : 'water'; // 河道，y20 为桥
     if (isRoad(x, y)) return 'path';
     return 'grass';
+  }
+
+  // 2.3 地貌（只读，不影响通行）：林地 / 高地 / 河岸 / 草甸 / 村庄 / 农田
+  function biomeOf(x, y) {
+    if (!inBounds(x, y)) return 'outside';
+    if (x >= 0 && x <= 4 && y >= 10 && y <= 27) return 'woodland';
+    if (x >= 28 && x <= 41 && y >= 0 && y <= 5) return 'highland';
+    if (x >= 39 && y >= 10 && y <= 28) return 'riverbank';
+    if (x >= 19 && x <= 28 && y >= 20 && y <= 29) return 'meadow';
+    if (y <= 9) return 'village';
+    return 'farmland';
   }
 
   function cheb(ax, ay, bx, by) {
@@ -713,6 +1325,8 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
   function fail(message) { return { ok: false, message: message }; }
 
   var CROP_IDS = Object.keys(CROPS);
+  var ITEM_IDS = Object.keys(ITEMS);
+  var PRODUCT_IDS = Object.keys(PRODUCTS);
 
   function findQuest(id) {
     for (var i = 0; i < QUESTS.length; i++) if (QUESTS[i].id === id) return QUESTS[i];
@@ -868,6 +1482,8 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     if (!isPlainObject(data.bag)) throw saveError('bag 必须是对象。');
     CROP_IDS.forEach(function (id) {
       if (data.seeds[id] !== undefined && (!isInt(data.seeds[id]) || data.seeds[id] < 0 || data.seeds[id] > 999999)) throw saveError('seeds.' + id + ' 必须是非负整数。');
+    });
+    ITEM_IDS.forEach(function (id) {
       if (data.bag[id] !== undefined && (!isInt(data.bag[id]) || data.bag[id] < 0 || data.bag[id] > 999999)) throw saveError('bag.' + id + ' 必须是非负整数。');
     });
     if (!isPlainObject(data.plots)) throw saveError('plots 必须是对象。');
@@ -904,6 +1520,44 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     if (!isPlainObject(data.player)) throw saveError('player 必须是对象。');
     if (!inBounds(data.player.x, data.player.y)) throw saveError('player 坐标超出地图。');
     if (FACINGS.indexOf(data.player.facing) < 0) throw saveError('player.facing 必须是 up/down/left/right。');
+
+    // ---- 2.3 新字段：旧存档可以完全没有；一旦存在就必须合法 ----
+    if (data.livestock !== undefined) {
+      var lv = data.livestock;
+      if (!isPlainObject(lv)) throw saveError('livestock 必须是对象。');
+      ['coop', 'barn'].forEach(function (k) {
+        if (typeof lv[k] !== 'boolean') throw saveError('livestock.' + k + ' 必须是布尔值。');
+      });
+      if (!isInt(lv.chickens) || lv.chickens < 0 || lv.chickens > 6) throw saveError('livestock.chickens 必须是 0 到 6 的整数。');
+      if (!isInt(lv.cows) || lv.cows < 0 || lv.cows > 3) throw saveError('livestock.cows 必须是 0 到 3 的整数。');
+      if (lv.chickens > 0 && !lv.coop) throw saveError('livestock.chickens 需要先建好鸡舍。');
+      if (lv.cows > 0 && !lv.barn) throw saveError('livestock.cows 需要先建好牛棚。');
+      ['feed', 'eggsReady', 'milkReady'].forEach(function (k) {
+        if (!isInt(lv[k]) || lv[k] < 0 || lv[k] > 999999) throw saveError('livestock.' + k + ' 必须是非负整数。');
+      });
+      if (!isInt(lv.fedAtDay) || lv.fedAtDay < 0 || lv.fedAtDay > data.day) throw saveError('livestock.fedAtDay 必须在 0 到 day 之间。');
+    }
+    if (data.industry !== undefined) {
+      var ind = data.industry;
+      if (!isPlainObject(ind)) throw saveError('industry 必须是对象。');
+      if (typeof ind.built !== 'boolean') throw saveError('industry.built 必须是布尔值。');
+      if (!Array.isArray(ind.jobs)) throw saveError('industry.jobs 必须是数组。');
+      if (ind.jobs.length > MAX_JOBS) throw saveError('industry.jobs 最多 ' + MAX_JOBS + ' 条。');
+      if (ind.jobs.length > 0 && !ind.built) throw saveError('industry.jobs 需要先建好加工坊。');
+      ind.jobs.forEach(function (job) {
+        if (!isPlainObject(job)) throw saveError('industry.jobs 里必须是对象。');
+        if (!RECIPES[job.recipe]) throw saveError('industry.jobs 里的配方未知：' + job.recipe);
+        if (!isInt(job.qty) || job.qty < 1 || job.qty > JOB_QTY_MAX) throw saveError('industry.jobs 的 qty 必须是 1 到 ' + JOB_QTY_MAX + ' 的整数。');
+        if (!isInt(job.readyDay) || job.readyDay < 1) throw saveError('industry.jobs 的 readyDay 必须是正整数。');
+      });
+    }
+    if (data.helpers !== undefined) {
+      var hp = data.helpers;
+      if (!isPlainObject(hp)) throw saveError('helpers 必须是对象。');
+      ['waterer', 'harvester'].forEach(function (k) {
+        if (typeof hp[k] !== 'boolean') throw saveError('helpers.' + k + ' 必须是布尔值。');
+      });
+    }
   }
 
   // cleared 只存地图内的 "x,y"，不强制是固定布景（版本演进时更宽容）：
@@ -918,6 +1572,8 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     var seeds = {}, bag = {};
     CROP_IDS.forEach(function (id) {
       seeds[id] = data.seeds[id] || 0;
+    });
+    ITEM_IDS.forEach(function (id) {
       bag[id] = data.bag[id] || 0;
     });
     var plots = {};
@@ -956,8 +1612,44 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
         earned: data.stats.earned,
         watered: data.stats.watered
       },
-      player: { x: data.player.x, y: data.player.y, facing: data.player.facing }
+      player: { x: data.player.x, y: data.player.y, facing: data.player.facing },
+      livestock: buildLivestock(data.livestock),
+      industry: buildIndustry(data.industry),
+      helpers: buildHelpers(data.helpers)
     };
+  }
+
+  // 2.3 新字段归一化：旧存档缺字段时给默认值，存在时按已校验的数据拷贝
+  function buildLivestock(src) {
+    var d = { coop: false, barn: false, chickens: 0, cows: 0, feed: 0, fedAtDay: 0, eggsReady: 0, milkReady: 0 };
+    if (!src) return d;
+    d.coop = !!src.coop;
+    d.barn = !!src.barn;
+    d.chickens = src.chickens;
+    d.cows = src.cows;
+    d.feed = src.feed;
+    d.fedAtDay = src.fedAtDay;
+    d.eggsReady = src.eggsReady;
+    d.milkReady = src.milkReady;
+    return d;
+  }
+
+  function buildIndustry(src) {
+    var d = { built: false, jobs: [] };
+    if (!src) return d;
+    d.built = !!src.built;
+    d.jobs = src.jobs.map(function (job) {
+      return { recipe: job.recipe, qty: job.qty, readyDay: job.readyDay };
+    });
+    return d;
+  }
+
+  function buildHelpers(src) {
+    var d = { waterer: false, harvester: false };
+    if (!src) return d;
+    d.waterer = !!src.waterer;
+    d.harvester = !!src.harvester;
+    return d;
   }
 
   // ---------------------------------------------------------------- FarmGame
@@ -979,7 +1671,7 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
       energy: 100,
       maxEnergy: 100,
       seeds: { radish: 6, carrot: 2, berry: 0 },
-      bag: { radish: 0, carrot: 0, berry: 0 },
+      bag: { radish: 0, carrot: 0, berry: 0, egg: 0, milk: 0, mayo: 0, cheese: 0, jam: 0 },
       wood: 0,
       stone: 0,
       plots: {},
@@ -988,7 +1680,10 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
       claimed: [],
       restedAtDay: 0,
       stats: { harvested: 0, sold: 0, earned: 0, watered: 0 },
-      player: { x: START.x, y: START.y, facing: START.facing }
+      player: { x: START.x, y: START.y, facing: START.facing },
+      livestock: { coop: false, barn: false, chickens: 0, cows: 0, feed: 0, fedAtDay: 0, eggsReady: 0, milkReady: 0 },
+      industry: { built: false, jobs: [] },
+      helpers: { waterer: false, harvester: false }
     };
   }
 
@@ -996,6 +1691,10 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
 
   FarmGame.prototype.tileAt = function (x, y) {
     return terrainAt(x, y);
+  };
+
+  FarmGame.prototype.biomeAt = function (x, y) {
+    return biomeOf(x, y);
   };
 
   FarmGame.prototype.isFarmTile = function (x, y) {
@@ -1198,6 +1897,144 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     return { ok: true, message: text[loc.id] || ('这里是' + loc.name + '。'), kind: loc.id };
   };
 
+  // ---- 2.3 生产经营：设施 / 养殖 / 加工 / 帮手
+
+  function sortedPlotKeys(st) {
+    return Object.keys(st.plots).sort(function (a, b) {
+      var A = a.split(','), B = b.split(',');
+      var ay = parseInt(A[1], 10), by = parseInt(B[1], 10);
+      return ay - by || parseInt(A[0], 10) - parseInt(B[0], 10);
+    });
+  }
+
+  function facilityBuilt(st, id) {
+    if (id === 'coop') return !!st.livestock.coop;
+    if (id === 'barn') return !!st.livestock.barn;
+    if (id === 'workshop') return !!st.industry.built;
+    return false;
+  }
+
+  FarmGame.prototype.buildFacility = function (id) {
+    var def = BUILDINGS[id];
+    if (!def) return fail('不认识这种设施：' + id + '。');
+    if (!this._near(id === 'workshop' ? 'workshop' : 'ranch')) {
+      return fail('要到' + (id === 'workshop' ? '加工坊' : '牧场') + '旁边才能建造。');
+    }
+    if (facilityBuilt(this.state, id)) return fail(def.name + '已经建好了。');
+    if (this.state.money < def.money) return fail('金币不够：建造' + def.name + '需要 ' + def.money + ' G。');
+    if (this.state.wood < def.wood) return fail('木材不够：建造' + def.name + '需要 ' + def.wood + ' 份。');
+    if (this.state.stone < def.stone) return fail('石料不够：建造' + def.name + '需要 ' + def.stone + ' 份。');
+    this.state.money -= def.money;
+    this.state.wood -= def.wood;
+    this.state.stone -= def.stone;
+    if (id === 'coop') this.state.livestock.coop = true;
+    else if (id === 'barn') this.state.livestock.barn = true;
+    else this.state.industry.built = true;
+    return ok('建好了' + def.name + '。');
+  };
+
+  FarmGame.prototype.buyAnimal = function (type, qty) {
+    var def = ANIMALS[type];
+    if (!def) return fail('没有这种动物：' + type + '。');
+    if (!this._near('ranch')) return fail('要到牧场旁边才能买动物。');
+    qty = qty === undefined ? 1 : qty;
+    if (!isInt(qty) || qty < 1 || qty > def.cap) return fail('一次购买数量要在 1 到 ' + def.cap + ' 之间。');
+    if (!facilityBuilt(this.state, def.facility)) return fail('要先建好' + BUILDINGS[def.facility].name + '。');
+    var field = type === 'chicken' ? 'chickens' : 'cows';
+    if (this.state.livestock[field] + qty > def.cap) return fail(def.name + '最多养 ' + def.cap + ' 只。');
+    var cost = def.price * qty;
+    if (this.state.money < cost) return fail('金币不够：需要 ' + cost + ' G。');
+    this.state.money -= cost;
+    this.state.livestock[field] += qty;
+    return ok('买了 ' + qty + ' 只' + def.name + '，花了 ' + cost + ' G。');
+  };
+
+  FarmGame.prototype.buyFeed = function (qty) {
+    if (!this._near('ranch') && !this._near('shop')) return fail('要到牧场或杂货铺旁边才能买饲料。');
+    qty = qty === undefined ? 1 : qty;
+    if (!isInt(qty) || qty < 1 || qty > 99) return fail('一次购买饲料数量要在 1 到 99 之间。');
+    var cost = FEED_PRICE * qty;
+    if (this.state.money < cost) return fail('金币不够：需要 ' + cost + ' G。');
+    this.state.money -= cost;
+    this.state.livestock.feed += qty;
+    return ok('买了 ' + qty + ' 份饲料，花了 ' + cost + ' G。');
+  };
+
+  FarmGame.prototype.feedAnimals = function () {
+    if (!this._near('ranch')) return fail('要到牧场旁边才能喂动物。');
+    var lv = this.state.livestock;
+    var total = lv.chickens + lv.cows;
+    if (total <= 0) return fail('还没有养动物。');
+    if (lv.fedAtDay === this.state.day) return fail('今天已经喂过了。');
+    var need = lv.chickens + lv.cows * 2;
+    if (lv.feed < need) return fail('饲料不够：需要 ' + need + ' 份。');
+    lv.feed -= need;
+    lv.fedAtDay = this.state.day;
+    return ok('喂了 ' + lv.chickens + ' 只鸡、' + lv.cows + ' 头牛，消耗 ' + need + ' 份饲料。');
+  };
+
+  FarmGame.prototype.collectAnimalProducts = function () {
+    if (!this._near('ranch')) return fail('要到牧场旁边才能收蛋奶。');
+    var lv = this.state.livestock;
+    var eggs = lv.eggsReady, milk = lv.milkReady;
+    if (eggs <= 0 && milk <= 0) return fail('现在没有可以收的蛋或奶。');
+    this.state.bag.egg += eggs;
+    this.state.bag.milk += milk;
+    lv.eggsReady = 0;
+    lv.milkReady = 0;
+    return ok('收下 ' + eggs + ' 个鸡蛋、' + milk + ' 瓶牛奶。');
+  };
+
+  FarmGame.prototype.craft = function (recipeId, qty) {
+    var def = RECIPES[recipeId];
+    if (!def) return fail('没有这种配方：' + recipeId + '。');
+    if (!this._near('workshop')) return fail('要到加工坊旁边才能加工。');
+    if (!this.state.industry.built) return fail('要先建好加工坊。');
+    qty = qty === undefined ? 1 : qty;
+    if (!isInt(qty) || qty < 1 || qty > JOB_QTY_MAX) return fail('每批数量要在 1 到 ' + JOB_QTY_MAX + ' 之间。');
+    if (this.state.industry.jobs.length >= MAX_JOBS) return fail('加工队列已经满了。');
+    var ids = Object.keys(def.ingredients);
+    for (var i = 0; i < ids.length; i++) {
+      var need = def.ingredients[ids[i]] * qty;
+      if ((this.state.bag[ids[i]] || 0) < need) return fail(materialName(ids[i]) + '不够：需要 ' + need + ' 个。');
+    }
+    ids.forEach(function (k) { this.state.bag[k] -= def.ingredients[k] * qty; }, this);
+    this.state.industry.jobs.push({ recipe: recipeId, qty: qty, readyDay: this.state.day + def.days });
+    return ok('开始加工 ' + qty + ' 份' + def.name + '，明天就好。');
+  };
+
+  FarmGame.prototype.collectCrafted = function () {
+    if (!this._near('workshop')) return fail('要到加工坊旁边才能取成品。');
+    var jobs = this.state.industry.jobs;
+    var ready = jobs.filter(function (j) { return j.readyDay <= this.state.day; }, this);
+    if (!ready.length) return fail('还没有加工好的成品。');
+    var got = 0;
+    ready.forEach(function (j) { this.state.bag[j.recipe] += j.qty; got += j.qty; }, this);
+    var today = this.state.day;
+    this.state.industry.jobs = jobs.filter(function (j) { return j.readyDay > today; });
+    return ok('取回 ' + got + ' 份加工品。');
+  };
+
+  FarmGame.prototype.hireHelper = function (id) {
+    var def = HELPERS[id];
+    if (!def) return fail('没有这种帮手：' + id + '。');
+    if (!this._near('guild')) return fail('要到帮手驿站才能雇佣。');
+    if (this.state.helpers[id]) return fail(def.name + '已经雇好了。');
+    if (this.state.money < def.hirePrice) return fail('金币不够：雇佣需要 ' + def.hirePrice + ' G。');
+    this.state.money -= def.hirePrice;
+    this.state.helpers[id] = true;
+    return ok('雇好了' + def.name + '。');
+  };
+
+  FarmGame.prototype.fireHelper = function (id) {
+    var def = HELPERS[id];
+    if (!def) return fail('没有这种帮手：' + id + '。');
+    if (!this._near('guild')) return fail('要到帮手驿站才能解雇。');
+    if (!this.state.helpers[id]) return fail('还没有雇佣' + def.name + '。');
+    this.state.helpers[id] = false;
+    return ok('和' + def.name + '结束了合作，没有退还雇佣费。');
+  };
+
   // ---- 睡觉 / 时间
 
   FarmGame.prototype.sleep = function () {
@@ -1205,30 +2042,89 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     var home = LOCATIONS.home;
     if (cheb(p.x, p.y, home.x, home.y) > 1) return fail('要回到小屋旁边才能睡觉。');
 
+    var st = this.state;
+    var plots = st.plots;
+    var nextWeather = weatherForDay(st.seed, st.day + 1);
+    var skipped = [];
+    var helpers = { watered: 0, harvested: 0, wages: 0, skipped: skipped };
+    var keys = Object.keys(plots).sort(function (a, b) {
+      var A = a.split(','), B = b.split(',');
+      return parseInt(A[1], 10) - parseInt(B[1], 10) || parseInt(A[0], 10) - parseInt(B[0], 10);
+    });
+
+    // 雨天（今天或明天）田地由雨水打理：浇水帮手没有活干，也不收工资
+    var rainCovers = nextWeather === 'rainy' || st.weather === 'rainy';
+    if (st.helpers.waterer) {
+      var thirsty = keys.filter(function (k) {
+        var pl = plots[k];
+        return pl.crop && pl.crop.age < CROPS[pl.crop.id].days && !pl.watered;
+      }).slice(0, HELPERS.waterer.capacity);
+      if (rainCovers) skipped.push('浇水帮手：今天或明天有雨，田地由雨水打理，今晚不用上工。');
+      else if (!thirsty.length) skipped.push('浇水帮手：今天没有需要浇水的作物。');
+      else if (st.money < HELPERS.waterer.wage) skipped.push('浇水帮手：金币不足 ' + HELPERS.waterer.wage + '，今晚没有上工。');
+      else {
+        thirsty.forEach(function (k) { plots[k].watered = true; });
+        st.money -= HELPERS.waterer.wage;
+        st.stats.watered += thirsty.length;
+        helpers.watered = thirsty.length;
+        helpers.wages += HELPERS.waterer.wage;
+      }
+    }
+
+    // 记录「今晚之前就已经成熟」的地块：帮手只收这些，今晚刚成熟的留给玩家自己收
+    var ripeBefore = keys.filter(function (k) {
+      var pl = plots[k];
+      return pl.crop && pl.crop.age >= CROPS[pl.crop.id].days;
+    });
+
     var grown = 0;
-    var plots = this.state.plots;
-    Object.keys(plots).forEach(function (key) {
+    keys.forEach(function (key) {
       var plot = plots[key];
       if (plot.crop) {
         var def = CROPS[plot.crop.id];
-        if (plot.crop.age < def.days && plot.watered) {
-          plot.crop.age += 1;
-          grown += 1;
-        }
+        if (plot.crop.age < def.days && plot.watered) { plot.crop.age += 1; grown += 1; }
       }
-      plot.watered = false; // 清空当天的浇水记录
+      plot.watered = false;
     });
 
-    this.state.day += 1;
-    this.state.minutes = START_DAY_MINUTES;
-    this.state.energy = this.state.maxEnergy;
-    var weather = weatherForDay(this.state.seed, this.state.day);
-    this.state.weather = weather;
-    if (weather === 'rainy') {
-      Object.keys(plots).forEach(function (key) { plots[key].watered = true; });
+    if (st.helpers.harvester) {
+      var ripe = ripeBefore.filter(function (k) { return plots[k].crop; }).slice(0, HELPERS.harvester.capacity);
+      if (!ripe.length) skipped.push('采收帮手：没有成熟的作物需要采收。');
+      else if (st.money < HELPERS.harvester.wage) skipped.push('采收帮手：金币不足 ' + HELPERS.harvester.wage + '，今晚没有上工。');
+      else {
+        ripe.forEach(function (k) {
+          var id = plots[k].crop.id;
+          plots[k].crop = null;
+          st.bag[id] = (st.bag[id] || 0) + 1;
+        });
+        st.money -= HELPERS.harvester.wage;
+        st.stats.harvested += ripe.length;
+        helpers.harvested = ripe.length;
+        helpers.wages += HELPERS.harvester.wage;
+      }
     }
-    var summary = { grown: grown, day: this.state.day, weather: weather };
-    var text = '第 ' + this.state.day + ' 天开始了，' + (weather === 'rainy' ? '外面下着雨' : '天气晴朗') +
+
+    var lv = st.livestock;
+    var animals = { eggs: 0, milk: 0, unfed: false };
+    var hasAnimals = lv.chickens + lv.cows > 0;
+    if (hasAnimals && lv.fedAtDay === st.day) {
+      animals.eggs = lv.chickens;
+      animals.milk = lv.cows;
+      lv.eggsReady += lv.chickens;
+      lv.milkReady += lv.cows;
+    } else if (hasAnimals) animals.unfed = true;
+
+    st.day += 1;
+    st.minutes = START_DAY_MINUTES;
+    st.energy = st.maxEnergy;
+    var weather = weatherForDay(st.seed, st.day);
+    st.weather = weather;
+    if (weather === 'rainy') keys.forEach(function (key) { plots[key].watered = true; });
+    var craftReady = st.industry.jobs.filter(function (job) { return job.readyDay <= st.day; }).length;
+
+    var summary = { grown: grown, day: st.day, weather: weather, animals: animals, helpers: helpers, craftReady: craftReady };
+    this.summary = summary; // 最近一次睡觉的总结（UI 展示用）
+    var text = '第 ' + st.day + ' 天开始了，' + (weather === 'rainy' ? '外面下着雨' : '天气晴朗') +
       (grown > 0 ? '，有 ' + grown + ' 株作物长高了。' : '。');
     return { ok: true, message: text, summary: summary };
   };
@@ -1260,11 +2156,11 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     if (!this._near('bin')) return fail('要到出货箱旁边才能出售作物。');
     var bag = this.state.bag;
     var sold = 0, earned = 0;
-    Object.keys(CROPS).forEach(function (id) {
+    Object.keys(ITEMS).forEach(function (id) {
       var qty = bag[id] || 0;
       if (!qty) return;
       sold += qty;
-      earned += qty * CROPS[id].sellPrice;
+      earned += qty * ITEMS[id].sellPrice;
       bag[id] = 0;
     });
     if (sold === 0) return fail('背包里还没有可以出售的作物。');
@@ -1396,6 +2292,27 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     this.state = buildState(copy);
   };
 
+  // 便捷只读访问器：state.helpers 的别名（UI/测试读取帮手状态用）
+  Object.defineProperty(FarmGame.prototype, 'helpers', {
+    get: function () { return this.state.helpers; },
+    enumerable: false,
+    configurable: true
+  });
+
+  // 便捷只读访问器：state.livestock 的别名
+  Object.defineProperty(FarmGame.prototype, 'livestock', {
+    get: function () { return this.state.livestock; },
+    enumerable: false,
+    configurable: true
+  });
+
+  // 便捷只读访问器：state.industry 的别名
+  Object.defineProperty(FarmGame.prototype, 'industry', {
+    get: function () { return this.state.industry; },
+    enumerable: false,
+    configurable: true
+  });
+
   return {
     FarmGame: FarmGame,
     CROPS: CROPS,
@@ -1403,7 +2320,13 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     LOCATIONS: LOCATIONS,
     NPCS: NPCS,
     QUESTS: QUESTS,
-    TOOLS: TOOLS
+    TOOLS: TOOLS,
+    PRODUCTS: PRODUCTS,
+    ITEMS: ITEMS,
+    RECIPES: RECIPES,
+    BUILDINGS: BUILDINGS,
+    HELPERS: HELPERS,
+    ANIMALS: ANIMALS
   };
 });
 </script><script>/*!
@@ -1432,6 +2355,21 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     { x0: 30, y0: 10, x1: 39, y1: 25, name: '东田' }
   ];
   var FARM = FARMS[0];  /* 兼容旧引用（边界提示取整体范围时另算） */
+
+  /* 2.3 生产：新增地点（旧地点不动） */
+  var LOC_FALLBACK_EXTRA = {
+    ranch: { x: 2, y: 8, name: '牧场' },
+    workshop: { x: 25, y: 10, name: '加工坊' },
+    guild: { x: 28, y: 7, name: '帮手驿站' }
+  };
+  var RANCH_BOX = { x0: 0, y0: 4, x1: 2, y1: 7 };    /* 牧场建筑，不可走，入口(2,8) */
+  var RIVER = { x0: 40, x1: 41, y0: 10, y1: 28, bridgeY: 20 };  /* 河道，y20 为桥 */
+  var BIOMES = {
+    woodland: { x0: 0, x1: 4, y0: 10, y1: 27 },
+    highland: { x0: 28, x1: 41, y0: 0, y1: 5 },
+    riverbank: { x0: 39, x1: 41, y0: 10, y1: 28 },
+    meadow: { x0: 19, x1: 28, y0: 20, y1: 29 }
+  };
 
   var HOUSE_BOX = { x0: 3, y0: 3, x1: 8, y1: 6 };    /* 保留原位 */
   var SHOP_BOX = { x0: 20, y0: 3, x1: 26, y1: 6 };   /* 保留原位 */
@@ -1598,17 +2536,41 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     return y * COLS + x;
   }
 
-  /* 契约布局（core 未提供 tileAt 时使用；与 expansion-contract 一致） */
+  /* 契约布局（core 未提供 tileAt 时使用；与 expansion/production 契约一致） */
   function layoutTile(x, y) {
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS) { return 'outside'; }
     if (x >= HOUSE_BOX.x0 && x <= HOUSE_BOX.x1 && y >= HOUSE_BOX.y0 && y <= HOUSE_BOX.y1) { return 'building'; }
     if (x >= SHOP_BOX.x0 && x <= SHOP_BOX.x1 && y >= SHOP_BOX.y0 && y <= SHOP_BOX.y1) { return 'building'; }
+    /* 牧场建筑 x0..2 y4..7 不可走；入口 (2,8) 由下方道路连通 */
+    if (x >= RANCH_BOX.x0 && x <= RANCH_BOX.x1 && y >= RANCH_BOX.y0 && y <= RANCH_BOX.y1) { return 'building'; }
+    /* 河道 x40..41 y10..28，y20 为桥 */
+    if (x >= RIVER.x0 && x <= RIVER.x1 && y >= RIVER.y0 && y <= RIVER.y1) {
+      return y === RIVER.bridgeY ? 'path' : 'water';
+    }
     var dx = (x + 0.5 - POND.cx) / POND.rx, dy = (y + 0.5 - POND.cy) / POND.ry;
     if (dx * dx + dy * dy <= 1) { return 'water'; }
     /* 道路：y8 x2..40，x18 y8..28，x28 y8..28 */
     if (y === 8 && x >= 2 && x <= 40) { return 'path'; }
     if ((x === 18 || x === 28) && y >= 8 && y <= 28) { return 'path'; }
     return 'grass';
+  }
+
+  /* 地貌：优先 core.biomeAt，其次契约矩形，最后按 tile 兜底 */
+  function biomeOf(game, grid, x, y) {
+    if (game && typeof game.biomeAt === 'function') {
+      try {
+        var b = game.biomeAt(x, y);
+        if (typeof b === 'string' && b) { return b; }
+      } catch (e) {}
+    }
+    var t = tileOf(grid, x, y);
+    if (t === 'water' && x >= RIVER.x0) { return 'river'; }
+    if (x >= BIOMES.riverbank.x0 && x <= BIOMES.riverbank.x1 && y >= BIOMES.riverbank.y0 && y <= BIOMES.riverbank.y1) { return 'riverbank'; }
+    if (x >= BIOMES.woodland.x0 && x <= BIOMES.woodland.x1 && y >= BIOMES.woodland.y0 && y <= BIOMES.woodland.y1) { return 'woodland'; }
+    if (x >= BIOMES.highland.x0 && x <= BIOMES.highland.x1 && y >= BIOMES.highland.y0 && y <= BIOMES.highland.y1) { return 'highland'; }
+    if (x >= BIOMES.meadow.x0 && x <= BIOMES.meadow.x1 && y >= BIOMES.meadow.y0 && y <= BIOMES.meadow.y1) { return 'meadow'; }
+    if (y <= 9) { return 'village'; }
+    return 'farmland';
   }
 
   var terrainMemo = typeof WeakMap === 'function' ? new WeakMap() : null;
@@ -1692,10 +2654,15 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     var core = root.FarmCore;
     var src = (core && core.LOCATIONS) || {};
     var out = {};
-    for (var k in LOC_FALLBACK) {
-      if (!has(LOC_FALLBACK, k)) { continue; }
-      var f = LOC_FALLBACK[k], s = src[k] || {};
-      out[k] = { x: num(s.x, f.x), y: num(s.y, f.y), name: String(s.name || f.name) };
+    /* 旧 9 个地点 + 2.3 新增 牧场/加工坊/帮手驿站 */
+    var tables = [LOC_FALLBACK, LOC_FALLBACK_EXTRA];
+    for (var ti = 0; ti < tables.length; ti++) {
+      var tbl = tables[ti];
+      for (var k in tbl) {
+        if (!has(tbl, k)) { continue; }
+        var f = tbl[k], s = src[k] || {};
+        out[k] = { x: num(s.x, f.x), y: num(s.y, f.y), name: String(s.name || f.name) };
+      }
     }
     return out;
   }
@@ -2021,6 +2988,103 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
   }
 
   /* 池塘岸线：草与水的过渡、石头、芦苇 */
+  /* biome 色层：林地更深、高地偏冷带岩纹、草甸偏黄、河岸带湿沙 */
+  function paintBiomeTint(g, game, grid, tx, ty, x, y) {
+    var b = biomeOf(game, grid, tx, ty);
+    if (b === 'woodland') {
+      px(g, x, y, TILE, TILE, 'rgba(58,92,50,0.16)');
+      for (var i = 0; i < 3; i++) {
+        var lx = x + 3 + Math.floor(h2(tx * 3 + i, ty * 7 + i) * 24);
+        var ly = y + 4 + Math.floor(h2(tx * 5 + i, ty * 3 + i) * 22);
+        px(g, lx, ly, 2, 4, 'rgba(64,96,54,0.30)');
+      }
+    } else if (b === 'highland') {
+      px(g, x, y, TILE, TILE, 'rgba(120,128,116,0.14)');
+      if (h2(tx + 3, ty + 9) > 0.45) {
+        px(g, x + 6 + Math.floor(h2(tx, ty + 2) * 14), y + 8 + Math.floor(h2(tx + 7, ty) * 14), 7, 3, 'rgba(150,158,150,0.30)');
+        px(g, x + 6 + Math.floor(h2(tx, ty + 2) * 14), y + 8 + Math.floor(h2(tx + 7, ty) * 14), 7, 1, 'rgba(176,184,174,0.30)');
+      }
+    } else if (b === 'meadow') {
+      px(g, x, y, TILE, TILE, 'rgba(214,204,120,0.10)');
+      if (h2(tx * 11 + 2, ty * 5 + 6) > 0.72) {
+        var fx = x + 8 + Math.floor(h2(tx + 1, ty + 4) * 16);
+        var fy = y + 8 + Math.floor(h2(tx + 6, ty + 3) * 16);
+        px(g, fx, fy + 1, 1, 3, 'rgba(120,150,90,0.55)');
+        px(g, fx - 1, fy, 3, 2, h2(tx, ty) > 0.5 ? '#f4e6a8' : '#f2cfd4');
+      }
+    } else if (b === 'riverbank') {
+      px(g, x, y, TILE, TILE, 'rgba(200,186,140,0.16)');
+    }
+  }
+
+  /* 河道：整块水体 + 桥面（y20 为 path） */
+  function paintRiver(g, grid) {
+    var minX = COLS, minY = ROWS, maxX = -1, maxY = -1, any = false;
+    for (var ty = 0; ty < ROWS; ty++) {
+      for (var tx = 0; tx < COLS; tx++) {
+        if (tileOf(grid, tx, ty) !== 'water') { continue; }
+        /* 只处理东侧河道（池塘走 paintPond） */
+        var pondDx = (tx + 0.5 - POND.cx) / POND.rx, pondDy = (ty + 0.5 - POND.cy) / POND.ry;
+        if (pondDx * pondDx + pondDy * pondDy <= 1) { continue; }
+        any = true;
+        if (tx < minX) { minX = tx; }
+        if (tx > maxX) { maxX = tx; }
+        if (ty < minY) { minY = ty; }
+        if (ty > maxY) { maxY = ty; }
+      }
+    }
+    if (!any) { return; }
+    var bx = minX * TILE, by = minY * TILE;
+    var bw = (maxX - minX + 1) * TILE, bh = (maxY - minY + 1) * TILE;
+
+    g.save();
+    g.beginPath();
+    for (var wy = minY; wy <= maxY; wy++) {
+      for (var wx = minX; wx <= maxX; wx++) {
+        if (tileOf(grid, wx, wy) !== 'water') { continue; }
+        var pdx = (wx + 0.5 - POND.cx) / POND.rx, pdy = (wy + 0.5 - POND.cy) / POND.ry;
+        if (pdx * pdx + pdy * pdy <= 1) { continue; }
+        g.rect(wx * TILE, wy * TILE, TILE, TILE);
+      }
+    }
+    g.clip();
+    px(g, bx, by, bw, bh, C.waterMid);
+    /* 顺流的浅色带与深色带 */
+    for (var i = 0; i < 40; i++) {
+      var lx = bx + h2(i * 5 + 1, i * 3 + 7) * bw;
+      var ly = by + h2(i * 9 + 2, i * 7 + 5) * bh;
+      px(g, lx, ly, 6 + Math.floor(h2(i, i + 3) * 8), 1, 'rgba(214,240,246,0.22)');
+    }
+    px(g, bx, by, bw, bh * 0.18, 'rgba(70,140,178,0.20)');
+    px(g, bx + bw * 0.62, by, bw * 0.38, bh, 'rgba(58,128,166,0.18)');
+    g.restore();
+
+    /* 两岸：石与芦苇已被 paintPondRim 处理同款，这里补浅滩线 */
+    for (var ry = minY; ry <= maxY; ry++) {
+      for (var rx = minX; rx <= maxX; rx++) {
+        if (tileOf(grid, rx, ry) !== 'water') { continue; }
+        var pdx2 = (rx + 0.5 - POND.cx) / POND.rx, pdy2 = (ry + 0.5 - POND.cy) / POND.ry;
+        if (pdx2 * pdx2 + pdy2 * pdy2 <= 1) { continue; }
+        var px0 = rx * TILE, py0 = ry * TILE;
+        if (tileOf(grid, rx - 1, ry) !== 'water') { px(g, px0, py0, 2, TILE, 'rgba(226,244,248,0.40)'); }
+        if (tileOf(grid, rx + 1, ry) !== 'water') { px(g, px0 + TILE - 2, py0, 2, TILE, 'rgba(210,236,244,0.34)'); }
+        if (tileOf(grid, rx, ry - 1) !== 'water') { px(g, px0, py0, TILE, 2, 'rgba(226,244,248,0.34)'); }
+        if (tileOf(grid, rx, ry + 1) !== 'water') { px(g, px0, py0 + TILE - 2, TILE, 2, 'rgba(210,236,244,0.30)'); }
+      }
+    }
+
+    /* 桥面（y20 的 path 格）：木板 + 栏杆 */
+    var bridgeY = (RIVER.bridgeY) * TILE;
+    var bridgeW = (RIVER.x1 - RIVER.x0 + 1) * TILE;
+    px(g, RIVER.x0 * TILE - 4, bridgeY + 2, bridgeW + 8, TILE - 4, C.woodDark);
+    px(g, RIVER.x0 * TILE - 2, bridgeY + 4, bridgeW + 4, TILE - 8, C.wood);
+    for (var bd = 0; bd < 6; bd++) {
+      px(g, RIVER.x0 * TILE - 2 + bd * 12, bridgeY + 4, 1, TILE - 8, C.woodLight);
+    }
+    px(g, RIVER.x0 * TILE - 4, bridgeY, bridgeW + 8, 3, C.woodLight);
+    px(g, RIVER.x0 * TILE - 4, bridgeY + TILE - 3, bridgeW + 8, 3, C.woodDark);
+  }
+
   function paintPondRim(g, grid) {
     for (var ty = 0; ty < ROWS; ty++) {
       for (var tx = 0; tx < COLS; tx++) {
@@ -2127,16 +3191,21 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     blob(g, bx + 16, by + 25, 12, 4, 'rgba(120,94,62,0.20)');
   }
 
+  /* 地面层缓存键：轻量指纹（耕地数量 + 浇水数 + 作物数 + 首个/末个 key），
+     避免每帧字符串化数百个地块造成抖动；变化时会重建。 */
   function plotsKey(st) {
     var plots = (st && st.plots) || {};
-    var parts = [];
+    var count = 0, watered = 0, crops = 0, first = '', last = '';
     for (var k in plots) {
       if (!has(plots, k)) { continue; }
       var p = plots[k];
-      parts.push(k + (p && p.watered ? 'w' : 'd') + (p && p.crop ? 'c' : '-'));
+      count++;
+      if (p && p.watered) { watered++; }
+      if (p && p.crop) { crops++; }
+      if (!first) { first = k; }
+      last = k;
     }
-    parts.sort();
-    return parts.join(';');
+    return count + ':' + watered + ':' + crops + ':' + first + ':' + last;
   }
 
   function paintBase(g, game, st) {
@@ -2146,13 +3215,14 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
         var t = grid[ty * COLS + tx];
         var x = tx * TILE, y = ty * TILE;
         if (t === 'water') {
-          /* 水体在 paintPond 里整块绘制 */
+          /* 水体在 paintPond / paintRiver 里整块绘制 */
         } else if (t === 'path') {
           paintPath(g, tx, ty, x, y, grid);
         } else if (t === 'outside') {
           paintOutside(g, tx, ty, x, y);
         } else {
           paintGrass(g, tx, ty, x, y);
+          paintBiomeTint(g, game, grid, tx, ty, x, y);
         }
       }
     }
@@ -2163,8 +3233,9 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
          (farmT.x1 - farmT.x0 + 1) * TILE, (farmT.y1 - farmT.y0 + 1) * TILE,
          'rgba(226,214,166,0.10)');
     }
-    /* 池塘水体 */
+    /* 池塘水体 + 河道 */
     paintPond(g, grid);
+    paintRiver(g, grid);
     /* 耕地（覆盖在草地之上） */
     var plots = (st && st.plots) || {};
     for (var key in plots) {
@@ -2436,6 +3507,233 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     px(g, cx - 1, by - 22, 2, 2, C.woodDark);
   }
 
+  /* ==================== 生产设施 / 动物 / 雇工 ==================== */
+  function prodState(st) {
+    var live = (st && st.livestock) || {};
+    var ind = (st && st.industry) || {};
+    var help = (st && st.helpers) || {};
+    return {
+      coop: !!live.coop, barn: !!live.barn,
+      chickens: clamp(Math.round(num(live.chickens, 0)), 0, 6),
+      cows: clamp(Math.round(num(live.cows, 0)), 0, 3),
+      feed: Math.max(0, Math.round(num(live.feed, 0))),
+      eggs: Math.max(0, Math.round(num(live.eggsReady, 0))),
+      milk: Math.max(0, Math.round(num(live.milkReady, 0))),
+      workshop: !!ind.built,
+      waterer: !!help.waterer, harvester: !!help.harvester
+    };
+  }
+
+  /* 牧场：围栏 + 小屋（已建鸡舍/牛棚时显示实体，否则显示地基与标牌） */
+  function drawRanch(g, st, t) {
+    var x0 = RANCH_BOX.x0 * TILE, y0 = RANCH_BOX.y0 * TILE;
+    var x1 = (RANCH_BOX.x1 + 1) * TILE, y1 = (RANCH_BOX.y1 + 1) * TILE;
+    var ps = prodState(st);
+    /* 草地围场（在牧场建筑下方的空地：x0..2 之外铺一圈栏杆） */
+    var fx0 = x0 - 20, fy0 = y0 + 8, fx1 = x1 + 150, fy1 = y1 + 78;
+    px(g, fx0, fy0, fx1 - fx0, fy1 - fy0, 'rgba(150,178,110,0.16)');
+    g.save();
+    g.strokeStyle = 'rgba(140,104,66,0.55)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(fx0, fy1); g.lineTo(fx0, fy0); g.lineTo(fx1, fy0);
+    g.stroke();
+    setDash(g, [5, 5]);
+    g.strokeStyle = 'rgba(140,104,66,0.25)';
+    g.beginPath();
+    g.moveTo(fx0, fy1); g.lineTo(fx1, fy1);
+    g.stroke();
+    setDash(g, []);
+    g.restore();
+    /* 栏柱 */
+    for (var pxi = fx0; pxi <= fx1; pxi += 22) {
+      px(g, pxi, fy0 - 2, 3, 8, C.woodDark);
+      px(g, pxi, fy0 - 2, 3, 2, C.woodLight);
+    }
+
+    /* 牧场小屋（x0..2,y4..7） */
+    var bx = x0 + 4, by = y0 + 4, bw = x1 - x0 - 8, bh = y1 - y0 - 8;
+    px(g, bx, by + bh * 0.42, bw, bh * 0.58, ps.coop || ps.barn ? '#e8d3ae' : 'rgba(214,198,166,0.55)');
+    px(g, bx, by + bh * 0.42, bw, 3, '#d3b98f');
+    /* 屋顶 */
+    if (ps.coop || ps.barn) {
+      g.beginPath();
+      g.moveTo(bx - 5, by + bh * 0.46);
+      g.lineTo(bx + bw * 0.18, by);
+      g.lineTo(bx + bw * 0.82, by);
+      g.lineTo(bx + bw + 5, by + bh * 0.46);
+      g.closePath();
+      g.fillStyle = '#b98a5c';
+      g.fill();
+      px(g, bx - 5, by + bh * 0.44, bw + 10, 4, '#9c6f45');
+      for (var rr = 0; rr < 3; rr++) {
+        px(g, bx + 3, by + 8 + rr * 8, bw - 6, 2, 'rgba(140,100,62,0.35)');
+      }
+    } else {
+      /* 未建：地基 + 木料堆 */
+      g.save();
+      setDash(g, [6, 4]);
+      g.strokeStyle = 'rgba(120,96,64,0.55)';
+      g.lineWidth = 2;
+      g.strokeRect(bx + 6, by + bh * 0.5, bw - 12, bh * 0.44);
+      setDash(g, []);
+      g.restore();
+      for (var li = 0; li < 4; li++) { px(g, bx + 12 + li * 5, by + bh * 0.62 + li * 2, 22, 3, C.wood); }
+    }
+    /* 门 */
+    px(g, bx + bw * 0.42, by + bh * 0.68, 20, bh * 0.32, ps.coop || ps.barn ? '#7c5233' : 'rgba(124,82,51,0.45)');
+    px(g, bx + bw * 0.42, by + bh * 0.68, 20, 2, '#9a6b45');
+    /* 屋内灯（已建且已喂） */
+    var fed = num(st && st.livestock && st.livestock.fedAtDay, -1) === num(st && st.day, 1);
+    if ((ps.coop || ps.barn) && fed) {
+      px(g, bx + 10, by + bh * 0.5, 7, 5, '#ffe6a6');
+      blob(g, bx + 13, by + bh * 0.52, 9, 7, 'rgba(255,228,150,0.16)');
+    }
+
+    /* 圈里的动物：随数量绘制（同一像素尺度） */
+    drawAnimals(g, ps, fx0 + 26, fy0 + 30, t);
+    /* 待收产物提示 */
+    if (ps.eggs > 0) { bucket(g, fx0 + 12, fy1 - 20, '蛋', ps.eggs, '#f2e4bf'); }
+    if (ps.milk > 0) { bucket(g, fx0 + 52, fy1 - 20, '奶', ps.milk, '#e8f1f4'); }
+  }
+
+  function drawAnimals(g, ps, ox, oy, t) {
+    /* 鸡：最多 6，两列小个头 */
+    for (var ci = 0; ci < ps.chickens; ci++) {
+      var cx = ox + (ci % 3) * 20 + (ci >= 3 ? 6 : 0);
+      var cy = oy + Math.floor(ci / 3) * 20;
+      var bob = Math.round(Math.sin(t * 0.004 + ci) * 1);
+      px(g, cx, cy + bob, 8, 6, '#f4f0e2');
+      px(g, cx + 1, cy + 1 + bob, 5, 2, '#fbf8ee');
+      px(g, cx + 6, cy - 2 + bob, 4, 4, '#f4f0e2');
+      px(g, cx + 8, cy - 1 + bob, 2, 1, '#e0a24a');
+      px(g, cx + 9, cy + 1 + bob, 1, 2, '#c9402f');
+      px(g, cx + 6, cy - 2 + bob, 1, 1, '#4a3a2c');
+      px(g, cx + 1, cy + 5 + bob, 1, 2, '#d8a34e');
+      px(g, cx + 5, cy + 5 + bob, 1, 2, '#d8a34e');
+    }
+    /* 牛：最多 3，个头更大 */
+    for (var bi = 0; bi < ps.cows; bi++) {
+      var bx = ox + bi * 34 + 8;
+      var byy = oy + 40 + Math.round(Math.sin(t * 0.0028 + bi * 1.7) * 1);
+      px(g, bx, byy, 18, 10, '#f2ece0');
+      px(g, bx, byy, 18, 3, '#fbf7ee');
+      px(g, bx - 6, byy + 1, 7, 6, '#f2ece0');
+      px(g, bx - 8, byy + 2, 3, 2, '#e0d3c2');
+      px(g, bx + 2, byy + 3, 5, 4, '#5b4636');
+      px(g, bx + 11, byy + 4, 4, 3, '#5b4636');
+      px(g, bx + 3, byy + 9, 2, 4, '#8a7358');
+      px(g, bx + 13, byy + 9, 2, 4, '#8a7358');
+      px(g, bx + 16, byy + 2, 2, 2, '#4a3a2c');
+    }
+  }
+
+  /* 小木桶标记待收数量 */
+  function bucket(g, x, y, label, count, tone) {
+    px(g, x, y, 12, 10, C.wood);
+    px(g, x, y, 12, 2, C.woodLight);
+    px(g, x, y + 8, 12, 2, C.woodDark);
+    px(g, x + 4, y - 4, 3, 5, tone);
+    g.font = FONT_TINY;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#3f3222';
+    g.fillText(String(count), x + 6, y + 5);
+  }
+
+  /* 加工坊：已建为石木工坊，未建为标牌与材料堆 */
+  function drawWorkshop(g, st, t) {
+    var loc = locations().workshop;
+    var cx = loc.x * TILE + 16, by = loc.y * TILE + 30;
+    var built = prodState(st).workshop;
+    blob(g, cx, by - 2, 26, 5, 'rgba(52,46,34,0.16)');
+    if (built) {
+      px(g, cx - 24, by - 30, 48, 30, '#d9cbb2');
+      px(g, cx - 24, by - 30, 48, 3, '#eadfc8');
+      px(g, cx - 24, by - 6, 48, 6, '#b8a688');
+      g.beginPath();
+      g.moveTo(cx - 28, by - 26);
+      g.lineTo(cx - 12, by - 42);
+      g.lineTo(cx + 12, by - 42);
+      g.lineTo(cx + 28, by - 26);
+      g.closePath();
+      g.fillStyle = '#8a6a52';
+      g.fill();
+      px(g, cx - 28, by - 27, 56, 3, '#a07c5e');
+      /* 烟囱与蒸汽 */
+      px(g, cx + 10, by - 50, 8, 12, '#9a8570');
+      px(g, cx + 10, by - 50, 8, 3, '#b09a84');
+      for (var s = 0; s < 3; s++) {
+        var ph = ((t * 0.00035) + s / 3) % 1;
+        blob(g, cx + 14 + Math.sin(ph * 6 + s) * 4, by - 52 - ph * 20, 3 + ph * 3, 2 + ph * 2,
+          'rgba(236,240,238,' + (0.35 * (1 - ph)).toFixed(3) + ')');
+      }
+      /* 门与窗 */
+      px(g, cx - 8, by - 22, 16, 22, '#7c5233');
+      px(g, cx - 8, by - 22, 16, 2, '#9a6b45');
+      px(g, cx - 20, by - 22, 9, 8, C.glass);
+      px(g, cx - 20, by - 22, 9, 2, C.glassLight);
+      px(g, cx + 12, by - 22, 9, 8, C.glass);
+      px(g, cx + 12, by - 22, 9, 2, C.glassLight);
+      /* 门口木桶（蛋黄酱/奶酪意象） */
+      px(g, cx - 26, by - 12, 8, 12, C.wood);
+      px(g, cx - 26, by - 12, 8, 2, C.woodLight);
+      px(g, cx + 18, by - 10, 9, 10, '#c9b48c');
+      px(g, cx + 18, by - 10, 9, 2, '#ddcaa4');
+    } else {
+      /* 未建：木牌 + 材料 */
+      px(g, cx - 16, by - 16, 3, 16, C.woodDark);
+      roundRectPath(g, cx - 22, by - 32, 44, 16, 3);
+      g.fillStyle = 'rgba(250,244,226,0.95)';
+      g.fill();
+      g.strokeStyle = 'rgba(110,84,52,0.55)';
+      g.lineWidth = 1;
+      g.stroke();
+      g.font = FONT_TINY;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#5c4427';
+      g.fillText('待建', cx, by - 24);
+      for (var m = 0; m < 3; m++) { px(g, cx + 2 + m * 5, by - 8, 18, 3, m % 2 ? C.wood : C.stone); }
+    }
+  }
+
+  /* 帮手驿站：旗幡 + 帐篷；雇工后门口站一个小人影 */
+  function drawGuild(g, st, t) {
+    var loc = locations().guild;
+    var cx = loc.x * TILE + 16, by = loc.y * TILE + 30;
+    var ps = prodState(st);
+    blob(g, cx, by - 2, 20, 4, 'rgba(52,46,34,0.14)');
+    /* 帐篷屋 */
+    g.beginPath();
+    g.moveTo(cx - 20, by - 4);
+    g.lineTo(cx, by - 34);
+    g.lineTo(cx + 20, by - 4);
+    g.closePath();
+    g.fillStyle = '#c98f66';
+    g.fill();
+    px(g, cx - 20, by - 6, 40, 4, '#a9744f');
+    px(g, cx - 2, by - 34, 4, 30, '#e0b48c');
+    px(g, cx - 7, by - 16, 14, 12, 'rgba(90,62,40,0.55)');
+    /* 旗幡 */
+    px(g, cx + 18, by - 40, 2, 36, C.woodDark);
+    var wav = Math.round(Math.sin(t * 0.003) * 2);
+    px(g, cx + 20, by - 38, 12 + wav, 7, '#d3705f');
+    px(g, cx + 20, by - 38, 12 + wav, 2, '#e58c7b');
+    /* 雇工人影（仅装饰，不表示位置） */
+    if (ps.waterer) { helperFigure(g, cx - 26, by - 6, '#7fa8d4'); }
+    if (ps.harvester) { helperFigure(g, cx + 26, by - 4, '#c9a06a'); }
+  }
+
+  function helperFigure(g, x, y, tone) {
+    px(g, x - 3, y - 14, 6, 8, tone);
+    px(g, x - 3, y - 14, 6, 2, '#ffffff55');
+    px(g, x - 2, y - 20, 4, 6, C.skin);
+    px(g, x - 2, y - 21, 4, 2, '#6b4a34');
+    px(g, x - 3, y - 6, 2, 6, '#5b6d92');
+    px(g, x + 1, y - 6, 2, 6, '#4a5a7b');
+  }
+
   /* ==================== 树 / 石头 ==================== */
   function drawTree(g, cx, baseY, variant, t) {
     var sway = Math.round(Math.sin(t * 0.0013 + cx * 0.05) * 1);
@@ -2507,11 +3805,25 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
   }
 
   function drawPlayer(g, st, view, t) {
+    /* 位置来源优先级：view.player（UI 做时间插值，可为小数）→ 逻辑状态。
+       只做"世界像素取整"，不写回 state，也不做子像素平移。 */
+    var vp = view && view.player;
     var p = (st && st.player) || {};
-    var tx = Math.round(num(p.x, 12)), ty = Math.round(num(p.y, 8));
-    var facing = String(p.facing || 'down');
-    var cx = tx * TILE + 16;
-    var yb = ty * TILE + 30 + Math.round(Math.sin(t * 0.0042) * 1);
+    var pxX, pxY, facing;
+    if (vp && (typeof vp.x === 'number' || typeof vp.y === 'number')) {
+      pxX = num(vp.x, num(p.x, 12));
+      pxY = num(vp.y, num(p.y, 8));
+      facing = String(vp.facing || p.facing || 'down');
+    } else {
+      pxX = num(p.x, 12);
+      pxY = num(p.y, 8);
+      facing = String(p.facing || 'down');
+    }
+    /* 格坐标(小数) → 世界像素 → 取整，保证像素边缘稳定 */
+    var wpx = Math.round(pxX * TILE + 16);
+    var wpy = Math.round(pxY * TILE + 30);
+    var cx = wpx;
+    var yb = wpy + Math.round(Math.sin(t * 0.0042) * 1);
     var skin = C.skin, skinShade = C.skinShade;
 
     blob(g, cx, yb - 2, 9, 3, 'rgba(52,44,34,0.18)');
@@ -3093,6 +4405,10 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     labelPlate(g, locs.shop.name, locs.shop.x * TILE + 16, SHOP_BOX.y0 * TILE - 10, near === 'shop');
     labelPlate(g, locs.bin.name, locs.bin.x * TILE + 16, locs.bin.y * TILE - 10, near === 'bin');
     labelPlate(g, locs.well.name, locs.well.x * TILE + 16, locs.well.y * TILE - 54, near === 'well');
+    /* 2.3 生产地点（入口名称可读） */
+    if (locs.ranch) { labelPlate(g, locs.ranch.name, locs.ranch.x * TILE + 16, RANCH_BOX.y0 * TILE - 12, near === 'ranch'); }
+    if (locs.workshop) { labelPlate(g, locs.workshop.name, locs.workshop.x * TILE + 16, locs.workshop.y * TILE - 52, near === 'workshop'); }
+    if (locs.guild) { labelPlate(g, locs.guild.name, locs.guild.x * TILE + 16, locs.guild.y * TILE - 56, near === 'guild'); }
 
     /* 村民：名字 + 角色 + 仅当本人有可领委托时亮"!" */
     var npcs = npcList();
@@ -3148,8 +4464,9 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     g.save();
     try { g.imageSmoothingEnabled = false; } catch (e) {}
 
-    /* 相机：只平移（格坐标），不缩放。视口 960x540/704 由 canvas 裁切。 */
-    g.translate(-Math.round(cam.x * TILE * 100) / 100, -Math.round(cam.y * TILE * 100) / 100);
+    /* 相机：只平移，且按整世界像素取整（避免 0.01px 子像素位移导致像素边缘闪烁）。
+       视口 960x540/704 由 canvas 自然裁切，绝不缩放。 */
+    g.translate(-Math.round(cam.x * TILE), -Math.round(cam.y * TILE));
 
     /* 1) 地面层（有 DOM 时整层缓存，只有耕地/浇水变化才重画） */
     var base = ensureBase(game, st);
@@ -3179,13 +4496,17 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
     }
     items.push({ y: (HOUSE_BOX.y1 + 1) * TILE, k: 'house' });
     items.push({ y: (SHOP_BOX.y1 + 1) * TILE, k: 'shop' });
+    items.push({ y: (RANCH_BOX.y1 + 1) * TILE, k: 'ranch' });
+    items.push({ y: locs.workshop.y * TILE + 30, k: 'workshop' });
+    items.push({ y: locs.guild.y * TILE + 30, k: 'guild' });
     items.push({ y: locs.well.y * TILE + 30, k: 'well' });
     items.push({ y: locs.bin.y * TILE + 30, k: 'bin' });
     var npcs = npcList();
     for (var ni = 0; ni < npcs.length; ni++) {
       items.push({ y: npcs[ni].y * TILE + 30, k: 'npc', u: npcs[ni] });
     }
-    items.push({ y: num(st.player && st.player.y, 8) * TILE + 30, k: 'player' });
+    var vpSort = (v && v.player && typeof v.player.y === 'number') ? v.player.y : num(st.player && st.player.y, 8);
+    items.push({ y: Math.round(num(vpSort, 8) * TILE) + 30, k: 'player' });
     items.sort(function (a, b) { return a.y - b.y; });
 
     for (var n = 0; n < items.length; n++) {
@@ -3204,6 +4525,12 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
         drawWell(g, t);
       } else if (it.k === 'bin') {
         drawBin(g, t);
+      } else if (it.k === 'ranch') {
+        drawRanch(g, st, t);
+      } else if (it.k === 'workshop') {
+        drawWorkshop(g, st, t);
+      } else if (it.k === 'guild') {
+        drawGuild(g, st, t);
       } else if (it.k === 'npc') {
         drawNPC(g, it.u, t);
       } else if (it.k === 'player') {
@@ -3228,20 +4555,32 @@ body.playing{overflow:hidden;background:#162b20}body.playing .masthead,body.play
 
   var FarmRenderer = {
     draw: draw,
-    version: '2.2.0',
+    version: '2.3.0',
     palette: C,
     map: { cols: COLS, rows: ROWS, tile: TILE, width: MAP_W, height: MAP_H },
     farms: FARMS,
-    npcs: NPC_KEYS
+    npcs: NPC_KEYS,
+    /* 2.3 只读元信息：供 UI/测试核对，绘制本身不依赖调用方读取 */
+    production: {
+      locations: Object.keys(LOC_FALLBACK_EXTRA),
+      river: RIVER,
+      biomes: BIOMES,
+      ranchBox: RANCH_BOX
+    }
   };
   root.FarmRenderer = FarmRenderer;
   if (typeof module !== 'undefined' && module.exports) {
     try { module.exports = FarmRenderer; } catch (e) {}
   }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null));
-</script><script>(function () {
+</script><script>/* Frame-rate independent grid movement presentation. Does not modify simulation state. */
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.FarmMotion=factory();})(typeof globalThis!=='undefined'?globalThis:this,function(){'use strict';
+function create(initial,duration=140){let from={x:initial.x,y:initial.y},to={...from},began=0,facing=initial.facing||'down';function raw(now){const t=Math.max(0,Math.min(1,(now-began)/duration));return{x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t,facing};}return{snap(player,now=0){from={x:player.x,y:player.y};to={...from};began=now-duration;facing=player.facing||facing;},set(player,now){facing=player.facing||facing;if(player.x===to.x&&player.y===to.y)return;if(Math.abs(player.x-to.x)>1||Math.abs(player.y-to.y)>1){this.snap(player,now);return;}from=raw(now);to={x:player.x,y:player.y};began=now;},sample(now){const p=raw(now);return{x:Math.round(p.x*32)/32,y:Math.round(p.y*32)/32,facing};},target(){return{...to};}};}
+return{create};});
+
+(function () {
 'use strict';
-const {FarmGame,CROPS,MAP,LOCATIONS,QUESTS,NPCS}=window.FarmCore;
+const {FarmGame,CROPS,MAP,LOCATIONS,QUESTS,NPCS,PRODUCTS,ITEMS,RECIPES,BUILDINGS,HELPERS}=window.FarmCore;
 const game=new FarmGame(), $=id=>document.getElementById(id), canvas=$('farm'), ctx=canvas.getContext('2d');
 const tools=['hoe','seed','water','harvest','axe','pickaxe'];
 const hints={hoe:'锄头 · 在浅绿色田地上开垦土地',seed:'种子 · 在耕好的空地播种',water:'水壶 · 每天浇一次水，作物才会生长',harvest:'采收 · 收获带有金色光点的成熟作物',axe:'斧头 · 砍除树木，收集木材',pickaxe:'镐子 · 清除石块，收集石料'};
@@ -3249,11 +4588,14 @@ const colors={radish:'#e8bba8',carrot:'#dfa04d',berry:'#cd707a'};
 const dirs={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
 const keyDirs={ArrowUp:'up',w:'up',W:'up',ArrowDown:'down',s:'down',S:'down',ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right'};
 const STORAGE='sand-garden-farm-v2',AUTO=STORAGE+'-auto';
-let menuOpen=null,started=false,tool='hoe',cropId='radish',paused=false,target=null,path=[],arrival=null,held=null,lastMove=0,lastFrame=0,clockElapsed=0,saveElapsed=0,nightNotice=0,toastTimer=0,renderErrors=0;
+let businessTab='ranch',menuOpen=null,started=false,tool='hoe',cropId='radish',paused=false,target=null,path=[],arrival=null,held=null,lastMove=0,lastFrame=0,clockElapsed=0,saveElapsed=0,nightNotice=0,toastTimer=0,renderErrors=0;
+const motion=window.FarmMotion.create(game.state.player);
+let paintElapsed=1000/60,renderDirty=true,lastDraw=0,frameCount=0,fps=0,fpsSamples=0,fpsElapsed=0,lastPerfLabel=0,drawMs=0;
 const dialog=$('dialog');
-function camera(){const p=game.state.player,cols=canvas.width/MAP.tile,rows=canvas.height/MAP.tile;return{x:Math.max(0,Math.min(MAP.cols-cols,p.x-cols/2)),y:Math.max(0,Math.min(MAP.rows-rows,p.y-rows/2))};}
+function visualPlayer(now=performance.now()){motion.set(game.state.player,now);return motion.sample(now);}
+function camera(now=performance.now()){const p=visualPlayer(now),cols=canvas.width/MAP.tile,rows=canvas.height/MAP.tile;return{x:Math.round(Math.max(0,Math.min(MAP.cols-cols,p.x-cols/2))*MAP.tile)/MAP.tile,y:Math.round(Math.max(0,Math.min(MAP.rows-rows,p.y-rows/2))*MAP.tile)/MAP.tile};}
 function closePanel(){menuOpen=null;$('inGamePanel').hidden=true;document.body.classList.remove('menu-expanded');clockElapsed=0;canvas.focus({preventScroll:true});}
-function openPanel(name){if(!started)return;if(menuOpen===name){closePanel();return;}stopMotion();menuOpen=name;for(const id of ['inventory','village','quests','system'])$(id+'Panel').hidden=id!==name;$('panelTitle').textContent=({inventory:'背包与种子',village:'村庄向导',quests:'村民委托',system:'存档与系统'})[name];$('inGamePanel').hidden=false;document.body.classList.add('menu-expanded');clockElapsed=0;update();}
+function openPanel(name){if(!started)return;if(menuOpen===name){closePanel();return;}stopMotion();menuOpen=name;for(const id of ['inventory','village','quests','business','system'])$(id+'Panel').hidden=id!==name;$('panelTitle').textContent=({inventory:'背包与种子',village:'村庄向导',quests:'村民委托',business:'生产经营',system:'存档与系统'})[name];if(name==='business')renderBusiness();$('inGamePanel').hidden=false;document.body.classList.add('menu-expanded');clockElapsed=0;update();}
 $('closePanelBtn').onclick=closePanel;document.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>openPanel(b.dataset.panel));
 $('fullscreenBtn').onclick=async()=>{try{if(document.fullscreenElement){await document.exitFullscreen();}else if($('gameStage').requestFullscreen){await $('gameStage').requestFullscreen();}else notify('当前浏览器不支持全屏，请使用F11或浏览器全屏菜单。');}catch{notify('浏览器未允许全屏，可以使用F11。');}};
 document.addEventListener('fullscreenchange',()=>{$('fullscreenBtn').textContent=document.fullscreenElement?'退出全屏':'全屏';});
@@ -3264,6 +4606,7 @@ function selectSeed(id){if(!CROPS[id])return;cropId=id;closePanel();selectTool('
 function frameResult(result,quiet=false){if(result&&(!quiet||!result.ok))notify(result.message);update();return result;}
 function updateTargetInfo(){if(!target)return;const p=game.state.plots[target.x+','+target.y];if(!p)return;let message=p.crop?CROPS[p.crop.id].name+' · '+(p.crop.age>=CROPS[p.crop.id].days?'可以采收':p.crop.age+' / '+CROPS[p.crop.id].days+' 个生长日'):'已开垦的空地';message+=' · '+(p.watered?'土地湿润':'需要浇水');$('contextHint').textContent=message;}
 function update(){
+ motion.set(game.state.player,performance.now());renderDirty=true;
  const s=game.state,hour=Math.floor(s.minutes/60),minute=s.minutes%60;
  $('dayLabel').textContent='春 · 第 '+s.day+' 天';$('weatherLabel').textContent=s.weather==='rainy'?'雨天':'晴天';$('clockLabel').textContent=String(hour).padStart(2,'0')+':'+String(minute).padStart(2,'0');
  $('moneyLabel').textContent=s.money.toLocaleString('zh-CN');$('energyBar').max=s.maxEnergy;$('energyBar').value=s.energy;$('energyLabel').textContent=s.energy+' / '+s.maxEnergy;$('positionLabel').textContent=s.player.x+', '+s.player.y;
@@ -3280,6 +4623,7 @@ for(const [id,c] of Object.entries(CROPS)){
  const item=document.createElement('div');item.className='inventory-item';item.innerHTML='<strong id="bag-'+id+'">0</strong><span>'+c.name+'</span>';$('inventory').append(item);
 }
 for(const q of QUESTS){const item=document.createElement('div');item.id='quest-'+q.id;item.className='quest-item';item.textContent=q.name;item.append(document.createElement('span'));const go=document.createElement('button');go.textContent='前往'+NPCS[q.npc||'npc'].name;go.onclick=()=>{closePanel();const id=q.npc||'npc',l=LOCATIONS[NPCS[id].location];if(paused){notify('先继续游戏，再前往村民身边。');return;}planRoute(l.x,l.y,NPCS[id].location);};item.append(go);$('questList').append(item);}for(const [id,npc]of Object.entries(NPCS)){if(id==='npc')continue;const b=document.createElement('button');b.dataset.go=npc.location;b.textContent=npc.name;const small=document.createElement('small');small.textContent=npc.role;b.append(small);b.onclick=()=>{closePanel();if(paused){notify('先继续游戏，再前往村民身边。');return;}const l=LOCATIONS[npc.location];planRoute(l.x,l.y,npc.location);};$('destinationList').append(b);}
+for(const id of ['ranch','workshop','guild']){const loc=LOCATIONS[id];if(!loc)continue;const b=document.createElement('button');b.dataset.go=id;b.textContent=loc.name;const small=document.createElement('small');small.textContent=id==='ranch'?'养殖与饲料':id==='workshop'?'加工成品':'雇佣帮手';b.append(small);b.onclick=()=>{closePanel();if(paused){notify('先继续游戏，再前往'+loc.name+'。');return;}planRoute(loc.x,loc.y,id);};$('destinationList').append(b);}
 function setPaused(value){paused=!!value;stopMotion();clockElapsed=0;$('pauseBtn').textContent=paused?'继续':'暂停';$('pauseBtn').setAttribute('aria-pressed',String(paused));$('pauseOverlay').hidden=!paused;}
 function showDialog(title,body,actions=[],eyebrow='田园手记'){
  closePanel();stopMotion();$('dialogTitle').textContent=title;$('dialogEyebrow').textContent=eyebrow;$('dialogBody').replaceChildren();
@@ -3291,7 +4635,7 @@ function closeDialog(){dialog.close();clockElapsed=0;canvas.focus({preventScroll
 $('closeDialog').onclick=closeDialog;dialog.addEventListener('cancel',()=>{stopMotion();clockElapsed=0;});
 function save(auto=false){if(!started)return false;try{const record={format:'sand-garden-farm',version:2,savedAt:new Date().toISOString(),state:game.snapshot()};localStorage.setItem(auto?AUTO:STORAGE,JSON.stringify(record));if(!auto)notify('农场已保存到这个浏览器。');return true;}catch{if(!auto)notify('浏览器存储不可用，请用「导出存档」保存文件。');return false;}}
 function decodeSave(text){const record=JSON.parse(text);return record&&record.format==='sand-garden-farm'?record.state:record;}
-function restoreState(state){const check=new FarmGame();check.restore(state);game.restore(check.snapshot());beginFarm();stopMotion();setPaused(true);target=null;nightNotice=0;update();window.FarmRenderer.draw(ctx,game,{time:0,tool,cropId,target,camera:camera()});}
+function restoreState(state){const check=new FarmGame();check.restore(state);game.restore(check.snapshot());beginFarm();stopMotion();setPaused(true);target=null;nightNotice=0;update();window.FarmRenderer.draw(ctx,game,{time:0,tool,cropId,target,camera:camera(),player:visualPlayer()});}
 function confirmRestore(data){try{const check=new FarmGame();check.restore(data);showDialog('继续这座农场？','<p>读入后将替换当前进度。你也可以先取消，保存现在的农场。</p>',[{label:'取消',action:closeDialog},{label:'读取存档',primary:true,action:()=>{try{restoreState(data);closeDialog();notify('读档成功，点击「继续」开始新的一天。');}catch(e){notify(e.message);}}}]);}catch(e){notify(e.message||'存档格式不正确。');}}
 function loadDialog(){
  let manual,auto;try{manual=localStorage.getItem(STORAGE);auto=localStorage.getItem(AUTO);}catch{notify('无法读取浏览器存储，请导入本地存档。');return;}
@@ -3304,10 +4648,84 @@ function interact(){
  if(!started||menuOpen)return;if(paused){notify('先点击「继续」，再和村庄互动。');return;}const result=game.interact();if(!result.ok){notify(result.message);return;}
  if(result.kind==='home')showDialog('今天就到这里吧','<p>睡一觉进入明天，体力会恢复。今天浇过水的作物将生长一天，没浇水的会等你，不会枯萎。</p>',[{label:'再逛一会儿',action:closeDialog},{label:'睡到明天',primary:true,action:()=>{const r=game.sleep();frameResult(r);if(r.ok){closeDialog();save(true);const sum=r.summary;showDialog('早安，第 '+game.state.day+' 天','<div class="summary-stats"><div><strong>'+sum.grown+'</strong><span>块作物生长</span></div><div><strong>'+game.state.energy+'</strong><span>体力恢复</span></div><div><strong>'+game.state.money+'</strong><span>现有金币</span></div></div><p class="summary-weather">今天是'+(game.state.weather==='rainy'?'雨天，雨水会替你照顾菜田。':'晴天，记得给作物浇水。')+'</p>',[{label:'开始新的一天',primary:true,action:closeDialog}],'小屋 / 新的一天');}}}],'小屋 / 结束一天');
  else if(result.kind==='shop')shopDialog();
- else if(result.kind==='bin'){const total=Object.entries(game.state.bag).reduce((a,[id,n])=>a+n*CROPS[id].sellPrice,0);showDialog('把收获带去集市','<p>出货箱里的收成会立即结算。你现在的作物一共值 <strong>'+total+' G</strong>。</p>',[{label:'先留着',action:closeDialog},{label:'卖出全部收获',primary:true,action:()=>{const r=game.sellAll();frameResult(r);if(r.ok){closeDialog();save(true);}}}],'出货箱 / 收获的回报');}
+ else if(result.kind==='bin'){const total=Object.entries(game.state.bag).reduce((a,[id,n])=>a+n*(ITEMS[id]?ITEMS[id].sellPrice:0),0);showDialog('把收获带去集市','<p>出货箱里的收成会立即结算。你现在的作物一共值 <strong>'+total+' G</strong>。</p>',[{label:'先留着',action:closeDialog},{label:'卖出全部收获',primary:true,action:()=>{const r=game.sellAll();frameResult(r);if(r.ok){closeDialog();save(true);}}}],'出货箱 / 收获的回报');}
  else if(result.kind==='npc')questDialog(result.npcId||'npc');
+ else if(result.kind==='ranch')ranchDialog();
+ else if(result.kind==='workshop')workshopDialog();
+ else if(result.kind==='guild')guildDialog();
  else if(result.kind==='well'){showDialog('井边的清风','<p>坐下来休息一下，每天可在井边恢复一次体力。</p>',[{label:'继续散步',action:closeDialog},{label:'休息一会儿',primary:true,action:()=>{const r=game.rest?game.rest():game.restAtWell?game.restAtWell():{ok:false,message:'今天先回家休息吧。'};frameResult(r);if(r.ok)closeDialog();}}],'石井 / 小憩');}
  else notify(result.message);
+}
+function money(n){return Math.round(n).toLocaleString('zh-CN');}
+function itemLabel(id){return (ITEMS[id]&&ITEMS[id].name)||id;}
+function businessNav(id,label){const l=LOCATIONS[id];if(!l)return;closePanel();if(paused){notify('先继续游戏，再前往'+label+'。');return;}planRoute(l.x,l.y,id);}
+function sceneAt(id){const s=game.state;return {ranch:s.livestock,workshop:s.industry,guild:s.helpers,money:s.money,bag:s.bag,day:s.day};}
+function row(labelHtml,valueHtml,disabled){const r=document.createElement('div');r.className='shop-row';const l=document.createElement('div');l.innerHTML=labelHtml;r.append(l);if(valueHtml){const v=document.createElement('div');v.className='business-value';v.textContent=valueHtml;r.append(v);}return r;}
+function button(text,handler,disabled,primary){const b=document.createElement('button');b.textContent=text;b.disabled=!!disabled;if(primary)b.className='primary';b.onclick=handler;return b;}
+function costLine(cost){return Object.entries(cost).map(([k,v])=>((ITEMS[k]&&ITEMS[k].name)||(k==='wood'?'木材':k==='stone'?'石料':k))+' '+v).join(' · ');}
+function renderBusiness(){
+ const s=game.state,host=$('businessBody');if(!host)return;host.replaceChildren();
+ const tabs=document.createElement('div');tabs.className='business-tabs';
+ for(const [id,label]of [['ranch','牧场'],['workshop','加工'],['guild','帮手']]){const b=document.createElement('button');b.className='business-tab';b.textContent=label;b.setAttribute('aria-selected',String(id===businessTab));b.onclick=()=>{businessTab=id;renderBusiness();};tabs.append(b);}
+ host.append(tabs);
+ const box=document.createElement('div');box.className='business-body';host.append(box);
+ const line=(html,value)=>{const row=document.createElement('div');row.className='shop-row';const l=document.createElement('div');l.innerHTML=html;row.append(l);if(value!==undefined&&value!==null){const v=document.createElement('div');v.className='business-value';v.textContent=value;row.append(v);}return row;};
+ const act=(html,text,fn,disabled,primary)=>{const row=line(html);const b=document.createElement('button');b.textContent=text;b.disabled=!!disabled;if(primary)b.className='prod-primary';b.onclick=fn;row.append(b);return row;};
+ if(businessTab==='ranch'){
+  const lv=s.livestock,need=lv.chickens+lv.cows*2,near=game._near('ranch');
+  box.append(line('<strong>牧场</strong><small>在牧场旁建造、买卖与喂养</small>',''));
+  [['coop','鸡舍'],['barn','牛棚']].forEach(([id,name])=>{const d=BUILDINGS[id],built=id==='coop'?lv.coop:lv.barn;const cost=d.money+' G'+(d.wood?' · 木材 '+d.wood:'')+(d.stone?' · 石料 '+d.stone:'');box.append(act(name+'<small>'+(built?'已建好':'花费 '+cost)+'</small>',built?'已建好':'建造',()=>{frameResult(game.buildFacility(id));renderBusiness();},!near||built,!built));});
+  box.append(line('饲料<small>每份 5 G · 一次喂食消耗 鸡 + 牛×2</small>',String(lv.feed)));
+  box.append(act('买饲料 ×10<small>50 G</small>','购买',()=>{frameResult(game.buyFeed(10));renderBusiness();},!near||s.money<50,false));
+  box.append(act('喂养动物<small>今天'+(lv.fedAtDay===s.day?'已喂过':'还没喂')+' · 需要 '+need+' 份</small>','喂食',()=>{frameResult(game.feedAnimals());renderBusiness();},!near||need<=0||lv.fedAtDay===s.day||lv.feed<need,true));
+  box.append(act('收蛋奶<small>鸡蛋 '+lv.eggsReady+' · 牛奶 '+lv.milkReady+'</small>','收取',()=>{frameResult(game.collectAnimalProducts());renderBusiness();},!near||(lv.eggsReady+lv.milkReady<=0),false));
+  [['chicken','鸡','coop',lv.chickens,6],['cow','牛','barn',lv.cows,3]].forEach(([type,name,fac,cur,cap])=>{
+   const price=type==='chicken'?80:220;box.append(act(name+'<small>'+price+' G · '+cur+'/'+cap+' 只</small>','买 1 只',()=>{frameResult(game.buyAnimal(type,1));renderBusiness();},!near||!lv[fac]||cur>=cap||s.money<price,false));
+  });
+  box.append(line('<span class="business-hint">在牧场旁才能操作；饲料不足时动物不会产出，但也不会死亡。</span>',''));
+ }else if(businessTab==='workshop'){
+  const ind=s.industry,near=game._near('workshop');
+  box.append(line('<strong>加工坊</strong><small>建好后把原料加工成高价成品</small>',''));
+  box.append(act('加工坊<small>'+(ind.built?'已建好':'180 G · 木材 6 · 石料 4')+'</small>',ind.built?'已建好':'建造',()=>{frameResult(game.buildFacility('workshop'));renderBusiness();},!near||ind.built,true));
+  Object.entries(RECIPES).forEach(([id,def])=>{
+   const cost=Object.entries(def.ingredients).map(([k,v])=>itemLabel(k)+' '+v).join(' + ');
+   box.append(act(def.name+'<small>'+cost+' → 1 天后得 1 份 · 售价 '+(ITEMS[id]?ITEMS[id].sellPrice:0)+' G</small>','加工 1 批',()=>{frameResult(game.craft(id,1));renderBusiness();},!near||!ind.built||ind.jobs.length>=3,false));
+  });
+  const jobs=ind.jobs.length?ind.jobs.map(j=>j.recipe+' ×'+j.qty+'（第 '+j.readyDay+' 天）').join('；'):'空';
+  box.append(line('队列<small>'+jobs+'</small>',ind.jobs.length+' / 3'));
+  const ready=ind.jobs.filter(j=>j.readyDay<=s.day).length;
+  box.append(act('取出成品<small>'+(ready?ready+' 批已就绪':'暂无到期批次')+'</small>','收取',()=>{frameResult(game.collectCrafted());renderBusiness();},!near||!ready,false));
+ }else{
+  const h=s.helpers,near=game._near('guild');
+  box.append(line('<strong>帮手驿站</strong><small>帮手在睡觉时上工，有活且钱够才扣工资</small>',''));
+  [['waterer','浇水帮手',25,12],['harvester','采收帮手',30,8]].forEach(([id,name,wage,cap])=>{
+   const d=HELPERS[id];
+   box.append(line(name+'<small>'+(h[id]?'已雇佣 · 每晚 '+wage+' G · 至多 '+cap+' 块':'雇佣 '+d.hirePrice+' G')+'</small>',h[id]?'工作中':'未雇佣'));
+   box.append(act(h[id]?'解雇'+name:'雇佣'+name+'<small>'+(h[id]?'不退还雇佣费':'每次 '+d.hirePrice+' G')+'</small>',h[id]?'解雇':'雇佣',()=>{frameResult(h[id]?game.fireHelper(id):game.hireHelper(id));renderBusiness();},!near,false));
+  });
+  box.append(line('<span class="business-hint">工资只在当晚真的干了活时扣除；没活、钱不够或下雨都会跳过并在第二天总结里说明。</span>',''));
+ }
+ const foot=document.createElement('div');foot.className='business-actions';
+ const jump=document.createElement('button');jump.className='prod-route';jump.textContent='前往'+({ranch:'牧场',workshop:'加工坊',guild:'帮手驿站'})[businessTab];jump.onclick=()=>businessNav(businessTab,({ranch:'牧场',workshop:'加工坊',guild:'帮手驿站'})[businessTab]);foot.append(jump);
+ box.append(foot);
+}
+function ranchDialog(){
+ const lv=game.state.livestock,box=document.createElement('div');
+ const p=document.createElement('p');p.textContent='牧场里有围栏、干草和动物。靠近时才能买动物、喂食与收蛋奶。';box.append(p);
+ const info=document.createElement('p');info.className='muted';info.textContent='鸡 '+lv.chickens+'/6 · 牛 '+lv.cows+'/3 · 饲料 '+lv.feed+' · 待收鸡蛋 '+lv.eggsReady+' · 牛奶 '+lv.milkReady;box.append(info);
+ showDialog('牧场',box,[{label:'打开经营面板',primary:true,action:()=>{closeDialog();openPanel('business');businessTab='ranch';renderBusiness();}},{label:'先忙别的',action:closeDialog}],'牧场 / 养殖与产出');
+}
+function workshopDialog(){
+ const ind=game.state.industry,box=document.createElement('div');
+ const p=document.createElement('p');p.textContent=ind.built?'机器转着，原料在这里变成卖得更贵的成品。':'这里还是一片空地，可以建一座加工坊。';box.append(p);
+ const info=document.createElement('p');info.className='muted';info.textContent='队列 '+ind.jobs.length+'/3、已到期 '+ind.jobs.filter(j=>j.readyDay<=game.state.day).length+' 批';box.append(info);
+ showDialog('加工坊',box,[{label:'打开加工面板',primary:true,action:()=>{closeDialog();openPanel('business');businessTab='workshop';renderBusiness();}},{label:'先忙别的',action:closeDialog}],'加工坊 / 原料变成品');
+}
+function guildDialog(){
+ const h=game.state.helpers,box=document.createElement('div');
+ const p=document.createElement('p');p.textContent='帮手们在这里等活。雇好之后，他们会在你睡觉时帮忙浇水和采收。';box.append(p);
+ const info=document.createElement('p');info.className='muted';info.textContent='浇水帮手：'+(h.waterer?'已雇佣':'未雇佣')+' · 采收帮手：'+(h.harvester?'已雇佣':'未雇佣');box.append(info);
+ showDialog('帮手驿站',box,[{label:'打开帮手面板',primary:true,action:()=>{closeDialog();openPanel('business');businessTab='guild';renderBusiness();}},{label:'先忙别的',action:closeDialog}],'帮手驿站 / 雇工与工资');
 }
 function shopDialog(){
  const box=document.createElement('div');const intro=document.createElement('p');intro.textContent='欢迎光临！萝卜适合起步，草莓需要更多耐心。你有 '+game.state.money+' G。';box.append(intro);
@@ -3328,20 +4746,44 @@ function planRoute(x,y,location=null){
  const steps=[];for(let k=end;seen.get(k)!==null;k=seen.get(k)){const [sx,sy]=k.split(',').map(Number);steps.unshift({x:sx,y:sy});}path=steps;arrival=location?()=>interact():null;update();if(!path.length&&arrival){const done=arrival;arrival=null;done();}
 }
 function coordinates(event){const r=canvas.getBoundingClientRect(),c=camera();return{x:Math.max(0,Math.min(MAP.cols-1,Math.floor(c.x+(event.clientX-r.left)/r.width*canvas.width/MAP.tile))),y:Math.max(0,Math.min(MAP.rows-1,Math.floor(c.y+(event.clientY-r.top)/r.height*canvas.height/MAP.tile)))};}
-canvas.addEventListener('pointermove',e=>{target=coordinates(e);updateTargetInfo();});canvas.addEventListener('pointerleave',()=>{target=null;});canvas.addEventListener('pointerdown',e=>{if(e.button!==0||dialog.open)return;e.preventDefault();canvas.focus({preventScroll:true});const at=coordinates(e);target=at;if(!started)return;if(paused){notify('点击「继续」再进入农场。');return;}const loc=Object.entries(LOCATIONS).find(([,l])=>l.x===at.x&&l.y===at.y);const building=at.x>=3&&at.x<=8&&at.y>=3&&at.y<=6?'home':at.x>=20&&at.x<=26&&at.y>=3&&at.y<=6?'shop':null;if(loc||building){const id=building||loc[0],destination=LOCATIONS[id];planRoute(destination.x,destination.y,id);return;}const p=game.state.player;if(Math.max(Math.abs(at.x-p.x),Math.abs(at.y-p.y))<=1)useAt(at.x,at.y);else planRoute(at.x,at.y);});
+canvas.addEventListener('pointermove',e=>{target=coordinates(e);renderDirty=true;updateTargetInfo();});canvas.addEventListener('pointerleave',()=>{target=null;renderDirty=true;});canvas.addEventListener('pointerdown',e=>{if(e.button!==0||dialog.open)return;e.preventDefault();canvas.focus({preventScroll:true});const at=coordinates(e);target=at;if(!started)return;if(paused){notify('点击「继续」再进入农场。');return;}const loc=Object.entries(LOCATIONS).find(([,l])=>l.x===at.x&&l.y===at.y);const building=at.x>=3&&at.x<=8&&at.y>=3&&at.y<=6?'home':at.x>=20&&at.x<=26&&at.y>=3&&at.y<=6?'shop':null;if(loc||building){const id=building||loc[0],destination=LOCATIONS[id];planRoute(destination.x,destination.y,id);return;}const p=game.state.player;if(Math.max(Math.abs(at.x-p.x),Math.abs(at.y-p.y))<=1)useAt(at.x,at.y);else planRoute(at.x,at.y);});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>selectTool(b.dataset.tool));document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const l=LOCATIONS[b.dataset.go];if(dialog.open)return;closePanel();if(paused){notify('先点击「继续」，再选择目的地。');return;}planRoute(l.x,l.y,b.dataset.go);});
 for(const b of document.querySelectorAll('[data-move]')){b.addEventListener('pointerdown',e=>{e.preventDefault();const d=b.dataset.move;held=Object.keys(dirs).find(k=>dirs[k].join(',')===d);path=[];arrival=null;move(held);lastMove=performance.now();b.setPointerCapture(e.pointerId);});for(const evt of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(evt,()=>{held=null;});}
-addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select,[contenteditable=true]')||!started||dialog.open||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key==='Escape'&&menuOpen){e.preventDefault();closePanel();return;}const pane=({Tab:'inventory',j:'quests',J:'quests',m:'village',M:'village'})[e.key];if(pane){e.preventDefault();if(!e.repeat)openPanel(pane);return;}if(menuOpen)return;const direction=keyDirs[e.key];if(direction){e.preventDefault();path=[];arrival=null;if(!e.repeat){held=direction;move(direction);lastMove=performance.now();}return;}if(e.repeat||e.ctrlKey||e.metaKey||e.altKey)return;if(e.code==='Space'&&!e.target.matches('button')){e.preventDefault();useAt();}else if(e.key.toLowerCase()==='e')interact();else if(e.key.toLowerCase()==='p')setPaused(!paused);else if(/^[1-6]$/.test(e.key))selectTool(tools[Number(e.key)-1]);});
+addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select,[contenteditable=true]')||!started||dialog.open||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key==='Escape'&&menuOpen){e.preventDefault();closePanel();return;}const pane=({Tab:'inventory',j:'quests',J:'quests',m:'village',M:'village',n:'business',N:'business'})[e.key];if(pane){e.preventDefault();if(!e.repeat)openPanel(pane);return;}if(menuOpen)return;const direction=keyDirs[e.key];if(direction){e.preventDefault();path=[];arrival=null;if(!e.repeat){held=direction;move(direction);lastMove=performance.now();}return;}if(e.repeat||e.ctrlKey||e.metaKey||e.altKey)return;if(e.code==='Space'&&!e.target.matches('button')){e.preventDefault();useAt();}else if(e.key.toLowerCase()==='e')interact();else if(e.key.toLowerCase()==='p')setPaused(!paused);else if(/^[1-6]$/.test(e.key))selectTool(tools[Number(e.key)-1]);});
 addEventListener('keyup',e=>{if(keyDirs[e.key]===held)held=null;});addEventListener('blur',stopMotion);document.addEventListener('visibilitychange',()=>{stopMotion();clockElapsed=0;lastFrame=0;if(document.hidden)save(true);});
 $('pauseBtn').onclick=()=>setPaused(!paused);$('useBtn').onclick=()=>useAt();$('interactBtn').onclick=interact;$('saveBtn').onclick=()=>save();$('loadBtn').onclick=loadDialog;
 $('helpBtn').onclick=()=>showDialog('你的第一天','<p>这是一款原创的轻量农场游戏，从一小袋种子开始，慢慢经营自己的田园。</p><ol><li>向下进入浅绿色田地，用锄头开垦。</li><li>选种子、播种，再给每块作物浇水。</li><li>回小屋睡到明天。浇过水才生长，下雨自动浇田。</li><li>成熟后采收，带到出货箱出售，再去杂货铺买种子。</li><li>拜访五位村民，完成他们各自的委托。交付材料会从背包扣除。</li></ol><div class="help-grid"><strong>移动</strong><span>WASD / 方向键 / 点击远处</span><strong>工具</strong><span>1–6 选择，空格使用；点击身边格子也可使用</span><strong>交互</strong><span>E / 「交互」按钮，或点击村庄向导自动走过去</span><strong>暂停</strong><span>P；菜单打开时也会暂停时间</span></div><p class="muted">没浇水只会暂停生长，不会枯萎。晚间会提醒回家，不会扣掉你的收获。游戏进度只保存在你的设备，请定期导出农场存档。</p>',[{label:'去种第一块田',primary:true,action:closeDialog}]);
 $('exportBtn').onclick=()=>{try{const blob=new Blob([JSON.stringify({format:'sand-garden-farm',version:2,savedAt:new Date().toISOString(),state:game.snapshot()},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='栖砂田园记-第'+game.state.day+'天.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);notify('已导出农场存档，可在另一台设备导入。');}catch{notify('导出失败，请尝试浏览器内保存。');}};
 $('importBtn').onclick=()=>{$('importFile').value='';$('importFile').click();};$('importFile').onchange=async e=>{const file=e.target.files&&e.target.files[0];if(!file)return;try{if(file.size>1048576)throw Error('存档文件过大，请选择不超过 1 MiB 的农场 JSON 文件。');const text=await file.text();confirmRestore(decodeSave(text));}catch(err){notify(err.message||'存档读取失败，当前农场未改变。');}finally{e.target.value='';}};
-function animate(now){const delta=lastFrame?Math.min(100,now-lastFrame):0;lastFrame=now;if(started&&!document.hidden&&!dialog.open&&!paused&&!menuOpen){if(now-lastMove>=140){lastMove=now;if(held)move(held);else if(path.length){const next=path.shift(),p=game.state.player,r=game.move(next.x-p.x,next.y-p.y);if(!r.ok)stopMotion();update();if(!path.length&&arrival){const done=arrival;arrival=null;done();}}}clockElapsed+=delta;saveElapsed+=delta;if(clockElapsed>=1000){clockElapsed-=1000;game.advanceTime(2);update();if(game.state.minutes>=1320&&nightNotice!==game.state.day){nightNotice=game.state.day;notify('夜深了，回小屋休息吧。');}}if(saveElapsed>=30000){saveElapsed=0;save(true);}}try{window.FarmRenderer.draw(ctx,game,{time:now,tool,cropId,target,camera:camera()});}catch(e){if(!renderErrors++)console.error('Farm rendering error:',e);}$('pauseOverlay').hidden=!paused;requestAnimationFrame(animate);}
+function animate(now){
+ const delta=lastFrame?Math.max(0,Math.min(250,now-lastFrame)):0;lastFrame=now;
+ const active=started&&!document.hidden&&!dialog.open&&!paused&&!menuOpen;
+ if(active){
+  let advances=0;
+  while((held||path.length)&&now-lastMove>=140&&advances++<3){
+   lastMove+=140;
+   if(held)move(held);
+   else if(path.length){const next=path.shift(),p=game.state.player,r=game.move(next.x-p.x,next.y-p.y);if(!r.ok)stopMotion();update();if(!path.length&&arrival){const done=arrival;arrival=null;done();}}
+   if(dialog.open||menuOpen)break;
+  }
+  if(!held&&!path.length)lastMove=now;
+  clockElapsed+=delta;saveElapsed+=delta;
+  while(clockElapsed>=1000){clockElapsed-=1000;game.advanceTime(2);update();if(game.state.minutes>=1320&&nightNotice!==game.state.day){nightNotice=game.state.day;notify('夜深了，回小屋休息吧。');}}
+  if(saveElapsed>=30000){saveElapsed=0;save(true);}
+ }else lastMove=now;
+ paintElapsed=Math.min(100,paintElapsed+delta);
+ if(started&&!document.hidden&&(active||renderDirty)&&paintElapsed>=1000/60){
+  paintElapsed%=1000/60;const began=performance.now();
+  try{window.FarmRenderer.draw(ctx,game,{time:now,tool,cropId,target,camera:camera(now),player:visualPlayer(now)});renderDirty=false;}catch(e){if(!renderErrors++)console.error('Farm rendering error:',e);}
+  drawMs=drawMs?drawMs*.9+(performance.now()-began)*.1:performance.now()-began;frameCount++;fpsSamples++;
+ }
+ if(now-lastPerfLabel>=500){const span=now-lastPerfLabel;fps=started?fpsSamples*1000/span:0;fpsSamples=0;lastPerfLabel=now;const label=$('fpsLabel');if(label)label.textContent=fps?Math.round(fps)+' FPS':'— FPS';}
+ requestAnimationFrame(animate);
+}
 update();selectTool('hoe');requestAnimationFrame(animate);
-window.SAND_FARM={version:'2.2.0',state:()=>game.snapshot(),health:()=>({canvas:!!ctx,renderErrors,started,menu:menuOpen,camera:camera(),day:game.state.day,plots:Object.keys(game.state.plots).length,paused}),game,selectTool,selectSeed,openPanel,closePanel,pause:setPaused,refresh:update,restore:restoreState,routeTo:id=>{const l=LOCATIONS[id];if(l)planRoute(l.x,l.y,id);}};
-function beginFarm(){document.body.classList.add('playing');closePanel();started=true;$('welcomeScreen').hidden=true;$('farmLayout').hidden=false;lastFrame=0;clockElapsed=0;stopMotion();update();canvas.focus({preventScroll:true});}
+window.SAND_FARM={version:'2.2.0',state:()=>game.snapshot(),health:()=>({canvas:!!ctx,renderErrors,started,menu:menuOpen,camera:camera(),visualPlayer:visualPlayer(),performance:{fps:Math.round(fps),drawMs:Number(drawMs.toFixed(2)),frames:frameCount},day:game.state.day,plots:Object.keys(game.state.plots).length,paused}),game,selectTool,selectSeed,openPanel,closePanel,pause:setPaused,refresh:update,restore:restoreState,routeTo:id=>{const l=LOCATIONS[id];if(l)planRoute(l.x,l.y,id);}};
+function beginFarm(){motion.snap(game.state.player,performance.now());renderDirty=true;document.body.classList.add('playing');closePanel();started=true;$('welcomeScreen').hidden=true;$('farmLayout').hidden=false;lastFrame=0;clockElapsed=0;stopMotion();update();canvas.focus({preventScroll:true});}
 function cover(){if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(()=>{});closePanel();document.body.classList.remove('playing');stopMotion();if(started)save(true);started=false;$('farmLayout').hidden=true;$('welcomeScreen').hidden=false;updateWelcome();}
 function updateWelcome(){let hasSave=false;try{hasSave=!!(localStorage.getItem(AUTO)||localStorage.getItem(STORAGE));}catch{}$('continueFarmBtn').hidden=!hasSave;$('startFarmBtn').textContent=hasSave?'新的农场':'开始种田';$('welcomeSaveInfo').textContent=hasSave?'发现设备上的农场存档，可以继续之前的生活。':'带上六袋萝卜种子和两袋胡萝卜种子，从第一天出发。';}
 $('startFarmBtn').onclick=()=>{let saved=false;try{saved=!!(localStorage.getItem(AUTO)||localStorage.getItem(STORAGE));}catch{}const launch=()=>{game.restore(new FarmGame().snapshot());beginFarm();setPaused(false);selectTool('hoe');notify('欢迎来到栖砂！向下走到田地，用锄头开垦第一块地。');};if(saved){showDialog('开启新的农场？','<p>新农场会从第一天开始，现有手动存档仍然保留；开始游玩后的自动存档会更新。你可以先导出现有进度。</p>',[{label:'取消',action:closeDialog},{label:'开始新的农场',primary:true,action:()=>{closeDialog();launch();}}]);}else launch();};

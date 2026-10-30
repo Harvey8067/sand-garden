@@ -176,6 +176,7 @@ if (loadError) {
   // ---------- 用例 ----------
   describe('模块与静态约定', () => {
     test('UMD 导出 FarmCore 且常量符合约定', () => {
+      // 只断言「至少有这些」，2.3 允许继续扩展导出（PRODUCTS/ITEMS/RECIPES/BUILDINGS/HELPERS 等）
       for (const key of ['FarmGame', 'CROPS', 'MAP', 'LOCATIONS', 'QUESTS', 'TOOLS', 'NPCS']) {
         assert.ok(FarmCore[key] != null, '缺少导出 ' + key);
       }
@@ -216,6 +217,90 @@ if (loadError) {
         assert.ok(quest, '应有委托 ' + id);
         for (const field of Object.keys(spec)) assert.equal(quest[field], spec[field], id + '.' + field);
       }
+
+      // 2.3：旧地点不变，新增三个经营地点
+      const newLocs = { ranch: { x: 2, y: 8, name: '牧场' }, workshop: { x: 25, y: 10, name: '加工坊' }, guild: { x: 28, y: 7, name: '帮手驿站' } };
+      for (const [id, spec] of Object.entries(newLocs)) {
+        const got = loc(id);
+        assert.ok(got, 'LOCATIONS 应包含 ' + id);
+        assert.equal(got.x, spec.x, id + '.x');
+        assert.equal(got.y, spec.y, id + '.y');
+        assert.equal(got.name, spec.name, id + '.name');
+      }
+    });
+
+    test('2.3 新增经营导出结构符合约定', () => {
+      const { PRODUCTS, ITEMS, RECIPES, BUILDINGS, HELPERS } = FarmCore;
+      for (const [key, value] of Object.entries({ PRODUCTS, ITEMS, RECIPES, BUILDINGS, HELPERS })) {
+        assert.ok(value && typeof value === 'object', '应导出 ' + key);
+      }
+      const productSpec = {
+        egg: { name: '鸡蛋', sellPrice: 25 },
+        milk: { name: '牛奶', sellPrice: 60 },
+        mayo: { name: '蛋黄酱', sellPrice: 80 },
+        cheese: { name: '奶酪', sellPrice: 180 },
+        jam: { name: '果酱', sellPrice: 180 },
+      };
+      for (const [id, spec] of Object.entries(productSpec)) {
+        assert.ok(PRODUCTS[id], 'PRODUCTS 应有 ' + id);
+        assert.equal(PRODUCTS[id].name, spec.name, id + '.name');
+        assert.equal(PRODUCTS[id].sellPrice, spec.sellPrice, id + '.sellPrice');
+      }
+      // ITEMS 是作物与产品的合集
+      for (const id of ['radish', 'carrot', 'berry', 'egg', 'milk', 'mayo', 'cheese', 'jam']) {
+        assert.ok(ITEMS[id], 'ITEMS 应包含 ' + id);
+      }
+      const recipeSpec = {
+        mayo: { ingredients: { egg: 2 }, days: 1 },
+        cheese: { ingredients: { milk: 2 }, days: 1 },
+        jam: { ingredients: { berry: 2 }, days: 1 },
+      };
+      for (const [id, spec] of Object.entries(recipeSpec)) {
+        assert.ok(RECIPES[id], 'RECIPES 应有 ' + id);
+        assert.deepEqual({ ...RECIPES[id].ingredients }, spec.ingredients, id + '.ingredients');
+        assert.equal(RECIPES[id].days, spec.days, id + '.days');
+        assert.equal(typeof RECIPES[id].name, 'string');
+      }
+      const buildingSpec = { coop: { money: 120, wood: 6, stone: 0 }, barn: { money: 300, wood: 12, stone: 6 }, workshop: { money: 180, wood: 6, stone: 4 } };
+      for (const [id, spec] of Object.entries(buildingSpec)) {
+        assert.ok(BUILDINGS[id], 'BUILDINGS 应有 ' + id);
+        for (const k of Object.keys(spec)) assert.equal(BUILDINGS[id][k], spec[k], id + '.' + k);
+      }
+      const helperSpec = { waterer: { hirePrice: 50, wage: 25, capacity: 12 }, harvester: { hirePrice: 60, wage: 30, capacity: 8 } };
+      for (const [id, spec] of Object.entries(helperSpec)) {
+        assert.ok(HELPERS[id], 'HELPERS 应有 ' + id);
+        for (const k of Object.keys(spec)) assert.equal(HELPERS[id][k], spec[k], id + '.' + k);
+      }
+    });
+
+    test('2.3 地形：河道/桥与地貌查询', () => {
+      const g = newGame();
+      // x40..41,y10..28 为水，但 y20 是桥（可走）
+      for (let y = 10; y <= 28; y++) {
+        for (const x of [40, 41]) {
+          if (y === 20) {
+            assert.equal(g.isWalkable(x, y), true, '(' + x + ',' + y + ') 桥应可走');
+            const t = g.tileAt(x, y);
+            assert.ok(t === 'bridge' || t === 'path', '(' + x + ',' + y + ') 桥的地形应为 bridge/path，实际 ' + t);
+          } else {
+            assert.equal(g.tileAt(x, y), 'water', '(' + x + ',' + y + ') 应为水');
+            assert.equal(g.isWalkable(x, y), false, '(' + x + ',' + y + ') 水面不可走');
+          }
+        }
+      }
+      // 2.3 不新增农田，仍为 352
+      let farm = 0;
+      for (let y = 0; y < MAP.rows; y++) for (let x = 0; x < MAP.cols; x++) if (g.isFarmTile(x, y)) farm++;
+      assert.equal(farm, 352, '2.3 农田仍应恰好 352 格');
+
+      if (typeof g.biomeAt === 'function') {
+        assert.equal(g.biomeAt(40, 15), 'riverbank', '河道属 riverbank');
+        assert.equal(g.biomeAt(1, 15), 'woodland', '西侧森林');
+        assert.equal(g.biomeAt(30, 2), 'highland', '右上高地');
+        assert.equal(g.biomeAt(22, 24), 'meadow', '南部草甸');
+        assert.equal(g.biomeAt(10, 12), 'farmland', '农田地貌');
+        assert.equal(g.biomeAt(12, 8), 'village', '村庄');
+      }
     });
   });
 
@@ -236,6 +321,15 @@ if (loadError) {
       assert.equal(isRain(s), false, '开局天气应是晴天');
       assert.deepEqual(pick(s.seeds, CROP_IDS), { radish: 6, carrot: 2, berry: 0 });
       assert.deepEqual(pick(s.bag, CROP_IDS), { radish: 0, carrot: 0, berry: 0 });
+      // 2.3：bag 允许新增产品键（默认 0），这里只校验已有的作物键，不排斥扩展键
+      for (const key of Object.keys(s.bag)) {
+        assert.equal(typeof s.bag[key], 'number', 'bag.' + key + ' 应为数字');
+      }
+      if (FarmCore.PRODUCTS) {
+        for (const id of Object.keys(FarmCore.PRODUCTS)) {
+          assert.equal(s.bag[id], 0, '初始 bag.' + id + ' 应为 0');
+        }
+      }
       assert.equal(s.wood, 0);
       assert.equal(s.stone, 0);
       assert.deepEqual(s.plots, {});
@@ -767,6 +861,29 @@ if (loadError) {
       standNear(restored, 'home');
       assert.equal(restored.sleep().ok, true);
       assert.equal(restored.state.day, save.day + 1);
+    });
+
+    test('2.2 旧存档（无 2.3 新字段）可读入并自动补默认值', () => {
+      const g = newGame();
+      const old = g.snapshot();
+      // 模拟 2.2 时代存档：去掉所有 2.3 才有的可选字段与产品背包键
+      delete old.livestock;
+      delete old.industry;
+      delete old.helpers;
+      if (FarmCore.PRODUCTS) for (const id of Object.keys(FarmCore.PRODUCTS)) delete old.bag[id];
+      old.money = 777;
+      old.plots = { '10,12': { watered: false, crop: { id: 'radish', age: 1 } } };
+
+      const fresh = newGame(31);
+      assert.doesNotThrow(() => fresh.restore(old), '2.2 旧存档应仍可读入');
+      assert.equal(fresh.state.money, 777, '金额保留');
+      assert.equal(plotAt(fresh, 10, 12).crop.id, 'radish', '原地块保留');
+      if (FarmCore.PRODUCTS) {
+        for (const id of Object.keys(FarmCore.PRODUCTS)) {
+          assert.equal(fresh.state.bag[id], 0, '缺失的产品背包键应补 0');
+        }
+        assert.deepEqual(pick(fresh.state.bag, CROP_IDS), pick(old.bag, CROP_IDS));
+      }
     });
 
     test('sleep 的 summary.grown/day/weather 与实际状态一致', () => {

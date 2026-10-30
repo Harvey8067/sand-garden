@@ -25,6 +25,21 @@
   ];
   var FARM = FARMS[0];  /* 兼容旧引用（边界提示取整体范围时另算） */
 
+  /* 2.3 生产：新增地点（旧地点不动） */
+  var LOC_FALLBACK_EXTRA = {
+    ranch: { x: 2, y: 8, name: '牧场' },
+    workshop: { x: 25, y: 10, name: '加工坊' },
+    guild: { x: 28, y: 7, name: '帮手驿站' }
+  };
+  var RANCH_BOX = { x0: 0, y0: 4, x1: 2, y1: 7 };    /* 牧场建筑，不可走，入口(2,8) */
+  var RIVER = { x0: 40, x1: 41, y0: 10, y1: 28, bridgeY: 20 };  /* 河道，y20 为桥 */
+  var BIOMES = {
+    woodland: { x0: 0, x1: 4, y0: 10, y1: 27 },
+    highland: { x0: 28, x1: 41, y0: 0, y1: 5 },
+    riverbank: { x0: 39, x1: 41, y0: 10, y1: 28 },
+    meadow: { x0: 19, x1: 28, y0: 20, y1: 29 }
+  };
+
   var HOUSE_BOX = { x0: 3, y0: 3, x1: 8, y1: 6 };    /* 保留原位 */
   var SHOP_BOX = { x0: 20, y0: 3, x1: 26, y1: 6 };   /* 保留原位 */
   var POND = { cx: 25, cy: 16, rx: 3, ry: 3 };       /* 保留原位 */
@@ -190,17 +205,41 @@
     return y * COLS + x;
   }
 
-  /* 契约布局（core 未提供 tileAt 时使用；与 expansion-contract 一致） */
+  /* 契约布局（core 未提供 tileAt 时使用；与 expansion/production 契约一致） */
   function layoutTile(x, y) {
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS) { return 'outside'; }
     if (x >= HOUSE_BOX.x0 && x <= HOUSE_BOX.x1 && y >= HOUSE_BOX.y0 && y <= HOUSE_BOX.y1) { return 'building'; }
     if (x >= SHOP_BOX.x0 && x <= SHOP_BOX.x1 && y >= SHOP_BOX.y0 && y <= SHOP_BOX.y1) { return 'building'; }
+    /* 牧场建筑 x0..2 y4..7 不可走；入口 (2,8) 由下方道路连通 */
+    if (x >= RANCH_BOX.x0 && x <= RANCH_BOX.x1 && y >= RANCH_BOX.y0 && y <= RANCH_BOX.y1) { return 'building'; }
+    /* 河道 x40..41 y10..28，y20 为桥 */
+    if (x >= RIVER.x0 && x <= RIVER.x1 && y >= RIVER.y0 && y <= RIVER.y1) {
+      return y === RIVER.bridgeY ? 'path' : 'water';
+    }
     var dx = (x + 0.5 - POND.cx) / POND.rx, dy = (y + 0.5 - POND.cy) / POND.ry;
     if (dx * dx + dy * dy <= 1) { return 'water'; }
     /* 道路：y8 x2..40，x18 y8..28，x28 y8..28 */
     if (y === 8 && x >= 2 && x <= 40) { return 'path'; }
     if ((x === 18 || x === 28) && y >= 8 && y <= 28) { return 'path'; }
     return 'grass';
+  }
+
+  /* 地貌：优先 core.biomeAt，其次契约矩形，最后按 tile 兜底 */
+  function biomeOf(game, grid, x, y) {
+    if (game && typeof game.biomeAt === 'function') {
+      try {
+        var b = game.biomeAt(x, y);
+        if (typeof b === 'string' && b) { return b; }
+      } catch (e) {}
+    }
+    var t = tileOf(grid, x, y);
+    if (t === 'water' && x >= RIVER.x0) { return 'river'; }
+    if (x >= BIOMES.riverbank.x0 && x <= BIOMES.riverbank.x1 && y >= BIOMES.riverbank.y0 && y <= BIOMES.riverbank.y1) { return 'riverbank'; }
+    if (x >= BIOMES.woodland.x0 && x <= BIOMES.woodland.x1 && y >= BIOMES.woodland.y0 && y <= BIOMES.woodland.y1) { return 'woodland'; }
+    if (x >= BIOMES.highland.x0 && x <= BIOMES.highland.x1 && y >= BIOMES.highland.y0 && y <= BIOMES.highland.y1) { return 'highland'; }
+    if (x >= BIOMES.meadow.x0 && x <= BIOMES.meadow.x1 && y >= BIOMES.meadow.y0 && y <= BIOMES.meadow.y1) { return 'meadow'; }
+    if (y <= 9) { return 'village'; }
+    return 'farmland';
   }
 
   var terrainMemo = typeof WeakMap === 'function' ? new WeakMap() : null;
@@ -284,10 +323,15 @@
     var core = root.FarmCore;
     var src = (core && core.LOCATIONS) || {};
     var out = {};
-    for (var k in LOC_FALLBACK) {
-      if (!has(LOC_FALLBACK, k)) { continue; }
-      var f = LOC_FALLBACK[k], s = src[k] || {};
-      out[k] = { x: num(s.x, f.x), y: num(s.y, f.y), name: String(s.name || f.name) };
+    /* 旧 9 个地点 + 2.3 新增 牧场/加工坊/帮手驿站 */
+    var tables = [LOC_FALLBACK, LOC_FALLBACK_EXTRA];
+    for (var ti = 0; ti < tables.length; ti++) {
+      var tbl = tables[ti];
+      for (var k in tbl) {
+        if (!has(tbl, k)) { continue; }
+        var f = tbl[k], s = src[k] || {};
+        out[k] = { x: num(s.x, f.x), y: num(s.y, f.y), name: String(s.name || f.name) };
+      }
     }
     return out;
   }
@@ -613,6 +657,103 @@
   }
 
   /* 池塘岸线：草与水的过渡、石头、芦苇 */
+  /* biome 色层：林地更深、高地偏冷带岩纹、草甸偏黄、河岸带湿沙 */
+  function paintBiomeTint(g, game, grid, tx, ty, x, y) {
+    var b = biomeOf(game, grid, tx, ty);
+    if (b === 'woodland') {
+      px(g, x, y, TILE, TILE, 'rgba(58,92,50,0.16)');
+      for (var i = 0; i < 3; i++) {
+        var lx = x + 3 + Math.floor(h2(tx * 3 + i, ty * 7 + i) * 24);
+        var ly = y + 4 + Math.floor(h2(tx * 5 + i, ty * 3 + i) * 22);
+        px(g, lx, ly, 2, 4, 'rgba(64,96,54,0.30)');
+      }
+    } else if (b === 'highland') {
+      px(g, x, y, TILE, TILE, 'rgba(120,128,116,0.14)');
+      if (h2(tx + 3, ty + 9) > 0.45) {
+        px(g, x + 6 + Math.floor(h2(tx, ty + 2) * 14), y + 8 + Math.floor(h2(tx + 7, ty) * 14), 7, 3, 'rgba(150,158,150,0.30)');
+        px(g, x + 6 + Math.floor(h2(tx, ty + 2) * 14), y + 8 + Math.floor(h2(tx + 7, ty) * 14), 7, 1, 'rgba(176,184,174,0.30)');
+      }
+    } else if (b === 'meadow') {
+      px(g, x, y, TILE, TILE, 'rgba(214,204,120,0.10)');
+      if (h2(tx * 11 + 2, ty * 5 + 6) > 0.72) {
+        var fx = x + 8 + Math.floor(h2(tx + 1, ty + 4) * 16);
+        var fy = y + 8 + Math.floor(h2(tx + 6, ty + 3) * 16);
+        px(g, fx, fy + 1, 1, 3, 'rgba(120,150,90,0.55)');
+        px(g, fx - 1, fy, 3, 2, h2(tx, ty) > 0.5 ? '#f4e6a8' : '#f2cfd4');
+      }
+    } else if (b === 'riverbank') {
+      px(g, x, y, TILE, TILE, 'rgba(200,186,140,0.16)');
+    }
+  }
+
+  /* 河道：整块水体 + 桥面（y20 为 path） */
+  function paintRiver(g, grid) {
+    var minX = COLS, minY = ROWS, maxX = -1, maxY = -1, any = false;
+    for (var ty = 0; ty < ROWS; ty++) {
+      for (var tx = 0; tx < COLS; tx++) {
+        if (tileOf(grid, tx, ty) !== 'water') { continue; }
+        /* 只处理东侧河道（池塘走 paintPond） */
+        var pondDx = (tx + 0.5 - POND.cx) / POND.rx, pondDy = (ty + 0.5 - POND.cy) / POND.ry;
+        if (pondDx * pondDx + pondDy * pondDy <= 1) { continue; }
+        any = true;
+        if (tx < minX) { minX = tx; }
+        if (tx > maxX) { maxX = tx; }
+        if (ty < minY) { minY = ty; }
+        if (ty > maxY) { maxY = ty; }
+      }
+    }
+    if (!any) { return; }
+    var bx = minX * TILE, by = minY * TILE;
+    var bw = (maxX - minX + 1) * TILE, bh = (maxY - minY + 1) * TILE;
+
+    g.save();
+    g.beginPath();
+    for (var wy = minY; wy <= maxY; wy++) {
+      for (var wx = minX; wx <= maxX; wx++) {
+        if (tileOf(grid, wx, wy) !== 'water') { continue; }
+        var pdx = (wx + 0.5 - POND.cx) / POND.rx, pdy = (wy + 0.5 - POND.cy) / POND.ry;
+        if (pdx * pdx + pdy * pdy <= 1) { continue; }
+        g.rect(wx * TILE, wy * TILE, TILE, TILE);
+      }
+    }
+    g.clip();
+    px(g, bx, by, bw, bh, C.waterMid);
+    /* 顺流的浅色带与深色带 */
+    for (var i = 0; i < 40; i++) {
+      var lx = bx + h2(i * 5 + 1, i * 3 + 7) * bw;
+      var ly = by + h2(i * 9 + 2, i * 7 + 5) * bh;
+      px(g, lx, ly, 6 + Math.floor(h2(i, i + 3) * 8), 1, 'rgba(214,240,246,0.22)');
+    }
+    px(g, bx, by, bw, bh * 0.18, 'rgba(70,140,178,0.20)');
+    px(g, bx + bw * 0.62, by, bw * 0.38, bh, 'rgba(58,128,166,0.18)');
+    g.restore();
+
+    /* 两岸：石与芦苇已被 paintPondRim 处理同款，这里补浅滩线 */
+    for (var ry = minY; ry <= maxY; ry++) {
+      for (var rx = minX; rx <= maxX; rx++) {
+        if (tileOf(grid, rx, ry) !== 'water') { continue; }
+        var pdx2 = (rx + 0.5 - POND.cx) / POND.rx, pdy2 = (ry + 0.5 - POND.cy) / POND.ry;
+        if (pdx2 * pdx2 + pdy2 * pdy2 <= 1) { continue; }
+        var px0 = rx * TILE, py0 = ry * TILE;
+        if (tileOf(grid, rx - 1, ry) !== 'water') { px(g, px0, py0, 2, TILE, 'rgba(226,244,248,0.40)'); }
+        if (tileOf(grid, rx + 1, ry) !== 'water') { px(g, px0 + TILE - 2, py0, 2, TILE, 'rgba(210,236,244,0.34)'); }
+        if (tileOf(grid, rx, ry - 1) !== 'water') { px(g, px0, py0, TILE, 2, 'rgba(226,244,248,0.34)'); }
+        if (tileOf(grid, rx, ry + 1) !== 'water') { px(g, px0, py0 + TILE - 2, TILE, 2, 'rgba(210,236,244,0.30)'); }
+      }
+    }
+
+    /* 桥面（y20 的 path 格）：木板 + 栏杆 */
+    var bridgeY = (RIVER.bridgeY) * TILE;
+    var bridgeW = (RIVER.x1 - RIVER.x0 + 1) * TILE;
+    px(g, RIVER.x0 * TILE - 4, bridgeY + 2, bridgeW + 8, TILE - 4, C.woodDark);
+    px(g, RIVER.x0 * TILE - 2, bridgeY + 4, bridgeW + 4, TILE - 8, C.wood);
+    for (var bd = 0; bd < 6; bd++) {
+      px(g, RIVER.x0 * TILE - 2 + bd * 12, bridgeY + 4, 1, TILE - 8, C.woodLight);
+    }
+    px(g, RIVER.x0 * TILE - 4, bridgeY, bridgeW + 8, 3, C.woodLight);
+    px(g, RIVER.x0 * TILE - 4, bridgeY + TILE - 3, bridgeW + 8, 3, C.woodDark);
+  }
+
   function paintPondRim(g, grid) {
     for (var ty = 0; ty < ROWS; ty++) {
       for (var tx = 0; tx < COLS; tx++) {
@@ -719,16 +860,21 @@
     blob(g, bx + 16, by + 25, 12, 4, 'rgba(120,94,62,0.20)');
   }
 
+  /* 地面层缓存键：轻量指纹（耕地数量 + 浇水数 + 作物数 + 首个/末个 key），
+     避免每帧字符串化数百个地块造成抖动；变化时会重建。 */
   function plotsKey(st) {
     var plots = (st && st.plots) || {};
-    var parts = [];
+    var count = 0, watered = 0, crops = 0, first = '', last = '';
     for (var k in plots) {
       if (!has(plots, k)) { continue; }
       var p = plots[k];
-      parts.push(k + (p && p.watered ? 'w' : 'd') + (p && p.crop ? 'c' : '-'));
+      count++;
+      if (p && p.watered) { watered++; }
+      if (p && p.crop) { crops++; }
+      if (!first) { first = k; }
+      last = k;
     }
-    parts.sort();
-    return parts.join(';');
+    return count + ':' + watered + ':' + crops + ':' + first + ':' + last;
   }
 
   function paintBase(g, game, st) {
@@ -738,13 +884,14 @@
         var t = grid[ty * COLS + tx];
         var x = tx * TILE, y = ty * TILE;
         if (t === 'water') {
-          /* 水体在 paintPond 里整块绘制 */
+          /* 水体在 paintPond / paintRiver 里整块绘制 */
         } else if (t === 'path') {
           paintPath(g, tx, ty, x, y, grid);
         } else if (t === 'outside') {
           paintOutside(g, tx, ty, x, y);
         } else {
           paintGrass(g, tx, ty, x, y);
+          paintBiomeTint(g, game, grid, tx, ty, x, y);
         }
       }
     }
@@ -755,8 +902,9 @@
          (farmT.x1 - farmT.x0 + 1) * TILE, (farmT.y1 - farmT.y0 + 1) * TILE,
          'rgba(226,214,166,0.10)');
     }
-    /* 池塘水体 */
+    /* 池塘水体 + 河道 */
     paintPond(g, grid);
+    paintRiver(g, grid);
     /* 耕地（覆盖在草地之上） */
     var plots = (st && st.plots) || {};
     for (var key in plots) {
@@ -1028,6 +1176,233 @@
     px(g, cx - 1, by - 22, 2, 2, C.woodDark);
   }
 
+  /* ==================== 生产设施 / 动物 / 雇工 ==================== */
+  function prodState(st) {
+    var live = (st && st.livestock) || {};
+    var ind = (st && st.industry) || {};
+    var help = (st && st.helpers) || {};
+    return {
+      coop: !!live.coop, barn: !!live.barn,
+      chickens: clamp(Math.round(num(live.chickens, 0)), 0, 6),
+      cows: clamp(Math.round(num(live.cows, 0)), 0, 3),
+      feed: Math.max(0, Math.round(num(live.feed, 0))),
+      eggs: Math.max(0, Math.round(num(live.eggsReady, 0))),
+      milk: Math.max(0, Math.round(num(live.milkReady, 0))),
+      workshop: !!ind.built,
+      waterer: !!help.waterer, harvester: !!help.harvester
+    };
+  }
+
+  /* 牧场：围栏 + 小屋（已建鸡舍/牛棚时显示实体，否则显示地基与标牌） */
+  function drawRanch(g, st, t) {
+    var x0 = RANCH_BOX.x0 * TILE, y0 = RANCH_BOX.y0 * TILE;
+    var x1 = (RANCH_BOX.x1 + 1) * TILE, y1 = (RANCH_BOX.y1 + 1) * TILE;
+    var ps = prodState(st);
+    /* 草地围场（在牧场建筑下方的空地：x0..2 之外铺一圈栏杆） */
+    var fx0 = x0 - 20, fy0 = y0 + 8, fx1 = x1 + 150, fy1 = y1 + 78;
+    px(g, fx0, fy0, fx1 - fx0, fy1 - fy0, 'rgba(150,178,110,0.16)');
+    g.save();
+    g.strokeStyle = 'rgba(140,104,66,0.55)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(fx0, fy1); g.lineTo(fx0, fy0); g.lineTo(fx1, fy0);
+    g.stroke();
+    setDash(g, [5, 5]);
+    g.strokeStyle = 'rgba(140,104,66,0.25)';
+    g.beginPath();
+    g.moveTo(fx0, fy1); g.lineTo(fx1, fy1);
+    g.stroke();
+    setDash(g, []);
+    g.restore();
+    /* 栏柱 */
+    for (var pxi = fx0; pxi <= fx1; pxi += 22) {
+      px(g, pxi, fy0 - 2, 3, 8, C.woodDark);
+      px(g, pxi, fy0 - 2, 3, 2, C.woodLight);
+    }
+
+    /* 牧场小屋（x0..2,y4..7） */
+    var bx = x0 + 4, by = y0 + 4, bw = x1 - x0 - 8, bh = y1 - y0 - 8;
+    px(g, bx, by + bh * 0.42, bw, bh * 0.58, ps.coop || ps.barn ? '#e8d3ae' : 'rgba(214,198,166,0.55)');
+    px(g, bx, by + bh * 0.42, bw, 3, '#d3b98f');
+    /* 屋顶 */
+    if (ps.coop || ps.barn) {
+      g.beginPath();
+      g.moveTo(bx - 5, by + bh * 0.46);
+      g.lineTo(bx + bw * 0.18, by);
+      g.lineTo(bx + bw * 0.82, by);
+      g.lineTo(bx + bw + 5, by + bh * 0.46);
+      g.closePath();
+      g.fillStyle = '#b98a5c';
+      g.fill();
+      px(g, bx - 5, by + bh * 0.44, bw + 10, 4, '#9c6f45');
+      for (var rr = 0; rr < 3; rr++) {
+        px(g, bx + 3, by + 8 + rr * 8, bw - 6, 2, 'rgba(140,100,62,0.35)');
+      }
+    } else {
+      /* 未建：地基 + 木料堆 */
+      g.save();
+      setDash(g, [6, 4]);
+      g.strokeStyle = 'rgba(120,96,64,0.55)';
+      g.lineWidth = 2;
+      g.strokeRect(bx + 6, by + bh * 0.5, bw - 12, bh * 0.44);
+      setDash(g, []);
+      g.restore();
+      for (var li = 0; li < 4; li++) { px(g, bx + 12 + li * 5, by + bh * 0.62 + li * 2, 22, 3, C.wood); }
+    }
+    /* 门 */
+    px(g, bx + bw * 0.42, by + bh * 0.68, 20, bh * 0.32, ps.coop || ps.barn ? '#7c5233' : 'rgba(124,82,51,0.45)');
+    px(g, bx + bw * 0.42, by + bh * 0.68, 20, 2, '#9a6b45');
+    /* 屋内灯（已建且已喂） */
+    var fed = num(st && st.livestock && st.livestock.fedAtDay, -1) === num(st && st.day, 1);
+    if ((ps.coop || ps.barn) && fed) {
+      px(g, bx + 10, by + bh * 0.5, 7, 5, '#ffe6a6');
+      blob(g, bx + 13, by + bh * 0.52, 9, 7, 'rgba(255,228,150,0.16)');
+    }
+
+    /* 圈里的动物：随数量绘制（同一像素尺度） */
+    drawAnimals(g, ps, fx0 + 26, fy0 + 30, t);
+    /* 待收产物提示 */
+    if (ps.eggs > 0) { bucket(g, fx0 + 12, fy1 - 20, '蛋', ps.eggs, '#f2e4bf'); }
+    if (ps.milk > 0) { bucket(g, fx0 + 52, fy1 - 20, '奶', ps.milk, '#e8f1f4'); }
+  }
+
+  function drawAnimals(g, ps, ox, oy, t) {
+    /* 鸡：最多 6，两列小个头 */
+    for (var ci = 0; ci < ps.chickens; ci++) {
+      var cx = ox + (ci % 3) * 20 + (ci >= 3 ? 6 : 0);
+      var cy = oy + Math.floor(ci / 3) * 20;
+      var bob = Math.round(Math.sin(t * 0.004 + ci) * 1);
+      px(g, cx, cy + bob, 8, 6, '#f4f0e2');
+      px(g, cx + 1, cy + 1 + bob, 5, 2, '#fbf8ee');
+      px(g, cx + 6, cy - 2 + bob, 4, 4, '#f4f0e2');
+      px(g, cx + 8, cy - 1 + bob, 2, 1, '#e0a24a');
+      px(g, cx + 9, cy + 1 + bob, 1, 2, '#c9402f');
+      px(g, cx + 6, cy - 2 + bob, 1, 1, '#4a3a2c');
+      px(g, cx + 1, cy + 5 + bob, 1, 2, '#d8a34e');
+      px(g, cx + 5, cy + 5 + bob, 1, 2, '#d8a34e');
+    }
+    /* 牛：最多 3，个头更大 */
+    for (var bi = 0; bi < ps.cows; bi++) {
+      var bx = ox + bi * 34 + 8;
+      var byy = oy + 40 + Math.round(Math.sin(t * 0.0028 + bi * 1.7) * 1);
+      px(g, bx, byy, 18, 10, '#f2ece0');
+      px(g, bx, byy, 18, 3, '#fbf7ee');
+      px(g, bx - 6, byy + 1, 7, 6, '#f2ece0');
+      px(g, bx - 8, byy + 2, 3, 2, '#e0d3c2');
+      px(g, bx + 2, byy + 3, 5, 4, '#5b4636');
+      px(g, bx + 11, byy + 4, 4, 3, '#5b4636');
+      px(g, bx + 3, byy + 9, 2, 4, '#8a7358');
+      px(g, bx + 13, byy + 9, 2, 4, '#8a7358');
+      px(g, bx + 16, byy + 2, 2, 2, '#4a3a2c');
+    }
+  }
+
+  /* 小木桶标记待收数量 */
+  function bucket(g, x, y, label, count, tone) {
+    px(g, x, y, 12, 10, C.wood);
+    px(g, x, y, 12, 2, C.woodLight);
+    px(g, x, y + 8, 12, 2, C.woodDark);
+    px(g, x + 4, y - 4, 3, 5, tone);
+    g.font = FONT_TINY;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#3f3222';
+    g.fillText(String(count), x + 6, y + 5);
+  }
+
+  /* 加工坊：已建为石木工坊，未建为标牌与材料堆 */
+  function drawWorkshop(g, st, t) {
+    var loc = locations().workshop;
+    var cx = loc.x * TILE + 16, by = loc.y * TILE + 30;
+    var built = prodState(st).workshop;
+    blob(g, cx, by - 2, 26, 5, 'rgba(52,46,34,0.16)');
+    if (built) {
+      px(g, cx - 24, by - 30, 48, 30, '#d9cbb2');
+      px(g, cx - 24, by - 30, 48, 3, '#eadfc8');
+      px(g, cx - 24, by - 6, 48, 6, '#b8a688');
+      g.beginPath();
+      g.moveTo(cx - 28, by - 26);
+      g.lineTo(cx - 12, by - 42);
+      g.lineTo(cx + 12, by - 42);
+      g.lineTo(cx + 28, by - 26);
+      g.closePath();
+      g.fillStyle = '#8a6a52';
+      g.fill();
+      px(g, cx - 28, by - 27, 56, 3, '#a07c5e');
+      /* 烟囱与蒸汽 */
+      px(g, cx + 10, by - 50, 8, 12, '#9a8570');
+      px(g, cx + 10, by - 50, 8, 3, '#b09a84');
+      for (var s = 0; s < 3; s++) {
+        var ph = ((t * 0.00035) + s / 3) % 1;
+        blob(g, cx + 14 + Math.sin(ph * 6 + s) * 4, by - 52 - ph * 20, 3 + ph * 3, 2 + ph * 2,
+          'rgba(236,240,238,' + (0.35 * (1 - ph)).toFixed(3) + ')');
+      }
+      /* 门与窗 */
+      px(g, cx - 8, by - 22, 16, 22, '#7c5233');
+      px(g, cx - 8, by - 22, 16, 2, '#9a6b45');
+      px(g, cx - 20, by - 22, 9, 8, C.glass);
+      px(g, cx - 20, by - 22, 9, 2, C.glassLight);
+      px(g, cx + 12, by - 22, 9, 8, C.glass);
+      px(g, cx + 12, by - 22, 9, 2, C.glassLight);
+      /* 门口木桶（蛋黄酱/奶酪意象） */
+      px(g, cx - 26, by - 12, 8, 12, C.wood);
+      px(g, cx - 26, by - 12, 8, 2, C.woodLight);
+      px(g, cx + 18, by - 10, 9, 10, '#c9b48c');
+      px(g, cx + 18, by - 10, 9, 2, '#ddcaa4');
+    } else {
+      /* 未建：木牌 + 材料 */
+      px(g, cx - 16, by - 16, 3, 16, C.woodDark);
+      roundRectPath(g, cx - 22, by - 32, 44, 16, 3);
+      g.fillStyle = 'rgba(250,244,226,0.95)';
+      g.fill();
+      g.strokeStyle = 'rgba(110,84,52,0.55)';
+      g.lineWidth = 1;
+      g.stroke();
+      g.font = FONT_TINY;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#5c4427';
+      g.fillText('待建', cx, by - 24);
+      for (var m = 0; m < 3; m++) { px(g, cx + 2 + m * 5, by - 8, 18, 3, m % 2 ? C.wood : C.stone); }
+    }
+  }
+
+  /* 帮手驿站：旗幡 + 帐篷；雇工后门口站一个小人影 */
+  function drawGuild(g, st, t) {
+    var loc = locations().guild;
+    var cx = loc.x * TILE + 16, by = loc.y * TILE + 30;
+    var ps = prodState(st);
+    blob(g, cx, by - 2, 20, 4, 'rgba(52,46,34,0.14)');
+    /* 帐篷屋 */
+    g.beginPath();
+    g.moveTo(cx - 20, by - 4);
+    g.lineTo(cx, by - 34);
+    g.lineTo(cx + 20, by - 4);
+    g.closePath();
+    g.fillStyle = '#c98f66';
+    g.fill();
+    px(g, cx - 20, by - 6, 40, 4, '#a9744f');
+    px(g, cx - 2, by - 34, 4, 30, '#e0b48c');
+    px(g, cx - 7, by - 16, 14, 12, 'rgba(90,62,40,0.55)');
+    /* 旗幡 */
+    px(g, cx + 18, by - 40, 2, 36, C.woodDark);
+    var wav = Math.round(Math.sin(t * 0.003) * 2);
+    px(g, cx + 20, by - 38, 12 + wav, 7, '#d3705f');
+    px(g, cx + 20, by - 38, 12 + wav, 2, '#e58c7b');
+    /* 雇工人影（仅装饰，不表示位置） */
+    if (ps.waterer) { helperFigure(g, cx - 26, by - 6, '#7fa8d4'); }
+    if (ps.harvester) { helperFigure(g, cx + 26, by - 4, '#c9a06a'); }
+  }
+
+  function helperFigure(g, x, y, tone) {
+    px(g, x - 3, y - 14, 6, 8, tone);
+    px(g, x - 3, y - 14, 6, 2, '#ffffff55');
+    px(g, x - 2, y - 20, 4, 6, C.skin);
+    px(g, x - 2, y - 21, 4, 2, '#6b4a34');
+    px(g, x - 3, y - 6, 2, 6, '#5b6d92');
+    px(g, x + 1, y - 6, 2, 6, '#4a5a7b');
+  }
+
   /* ==================== 树 / 石头 ==================== */
   function drawTree(g, cx, baseY, variant, t) {
     var sway = Math.round(Math.sin(t * 0.0013 + cx * 0.05) * 1);
@@ -1099,11 +1474,25 @@
   }
 
   function drawPlayer(g, st, view, t) {
+    /* 位置来源优先级：view.player（UI 做时间插值，可为小数）→ 逻辑状态。
+       只做"世界像素取整"，不写回 state，也不做子像素平移。 */
+    var vp = view && view.player;
     var p = (st && st.player) || {};
-    var tx = Math.round(num(p.x, 12)), ty = Math.round(num(p.y, 8));
-    var facing = String(p.facing || 'down');
-    var cx = tx * TILE + 16;
-    var yb = ty * TILE + 30 + Math.round(Math.sin(t * 0.0042) * 1);
+    var pxX, pxY, facing;
+    if (vp && (typeof vp.x === 'number' || typeof vp.y === 'number')) {
+      pxX = num(vp.x, num(p.x, 12));
+      pxY = num(vp.y, num(p.y, 8));
+      facing = String(vp.facing || p.facing || 'down');
+    } else {
+      pxX = num(p.x, 12);
+      pxY = num(p.y, 8);
+      facing = String(p.facing || 'down');
+    }
+    /* 格坐标(小数) → 世界像素 → 取整，保证像素边缘稳定 */
+    var wpx = Math.round(pxX * TILE + 16);
+    var wpy = Math.round(pxY * TILE + 30);
+    var cx = wpx;
+    var yb = wpy + Math.round(Math.sin(t * 0.0042) * 1);
     var skin = C.skin, skinShade = C.skinShade;
 
     blob(g, cx, yb - 2, 9, 3, 'rgba(52,44,34,0.18)');
@@ -1685,6 +2074,10 @@
     labelPlate(g, locs.shop.name, locs.shop.x * TILE + 16, SHOP_BOX.y0 * TILE - 10, near === 'shop');
     labelPlate(g, locs.bin.name, locs.bin.x * TILE + 16, locs.bin.y * TILE - 10, near === 'bin');
     labelPlate(g, locs.well.name, locs.well.x * TILE + 16, locs.well.y * TILE - 54, near === 'well');
+    /* 2.3 生产地点（入口名称可读） */
+    if (locs.ranch) { labelPlate(g, locs.ranch.name, locs.ranch.x * TILE + 16, RANCH_BOX.y0 * TILE - 12, near === 'ranch'); }
+    if (locs.workshop) { labelPlate(g, locs.workshop.name, locs.workshop.x * TILE + 16, locs.workshop.y * TILE - 52, near === 'workshop'); }
+    if (locs.guild) { labelPlate(g, locs.guild.name, locs.guild.x * TILE + 16, locs.guild.y * TILE - 56, near === 'guild'); }
 
     /* 村民：名字 + 角色 + 仅当本人有可领委托时亮"!" */
     var npcs = npcList();
@@ -1740,8 +2133,9 @@
     g.save();
     try { g.imageSmoothingEnabled = false; } catch (e) {}
 
-    /* 相机：只平移（格坐标），不缩放。视口 960x540/704 由 canvas 裁切。 */
-    g.translate(-Math.round(cam.x * TILE * 100) / 100, -Math.round(cam.y * TILE * 100) / 100);
+    /* 相机：只平移，且按整世界像素取整（避免 0.01px 子像素位移导致像素边缘闪烁）。
+       视口 960x540/704 由 canvas 自然裁切，绝不缩放。 */
+    g.translate(-Math.round(cam.x * TILE), -Math.round(cam.y * TILE));
 
     /* 1) 地面层（有 DOM 时整层缓存，只有耕地/浇水变化才重画） */
     var base = ensureBase(game, st);
@@ -1771,13 +2165,17 @@
     }
     items.push({ y: (HOUSE_BOX.y1 + 1) * TILE, k: 'house' });
     items.push({ y: (SHOP_BOX.y1 + 1) * TILE, k: 'shop' });
+    items.push({ y: (RANCH_BOX.y1 + 1) * TILE, k: 'ranch' });
+    items.push({ y: locs.workshop.y * TILE + 30, k: 'workshop' });
+    items.push({ y: locs.guild.y * TILE + 30, k: 'guild' });
     items.push({ y: locs.well.y * TILE + 30, k: 'well' });
     items.push({ y: locs.bin.y * TILE + 30, k: 'bin' });
     var npcs = npcList();
     for (var ni = 0; ni < npcs.length; ni++) {
       items.push({ y: npcs[ni].y * TILE + 30, k: 'npc', u: npcs[ni] });
     }
-    items.push({ y: num(st.player && st.player.y, 8) * TILE + 30, k: 'player' });
+    var vpSort = (v && v.player && typeof v.player.y === 'number') ? v.player.y : num(st.player && st.player.y, 8);
+    items.push({ y: Math.round(num(vpSort, 8) * TILE) + 30, k: 'player' });
     items.sort(function (a, b) { return a.y - b.y; });
 
     for (var n = 0; n < items.length; n++) {
@@ -1796,6 +2194,12 @@
         drawWell(g, t);
       } else if (it.k === 'bin') {
         drawBin(g, t);
+      } else if (it.k === 'ranch') {
+        drawRanch(g, st, t);
+      } else if (it.k === 'workshop') {
+        drawWorkshop(g, st, t);
+      } else if (it.k === 'guild') {
+        drawGuild(g, st, t);
       } else if (it.k === 'npc') {
         drawNPC(g, it.u, t);
       } else if (it.k === 'player') {
@@ -1820,11 +2224,18 @@
 
   var FarmRenderer = {
     draw: draw,
-    version: '2.2.0',
+    version: '2.3.0',
     palette: C,
     map: { cols: COLS, rows: ROWS, tile: TILE, width: MAP_W, height: MAP_H },
     farms: FARMS,
-    npcs: NPC_KEYS
+    npcs: NPC_KEYS,
+    /* 2.3 只读元信息：供 UI/测试核对，绘制本身不依赖调用方读取 */
+    production: {
+      locations: Object.keys(LOC_FALLBACK_EXTRA),
+      river: RIVER,
+      biomes: BIOMES,
+      ranchBox: RANCH_BOX
+    }
   };
   root.FarmRenderer = FarmRenderer;
   if (typeof module !== 'undefined' && module.exports) {

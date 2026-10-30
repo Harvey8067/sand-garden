@@ -157,6 +157,7 @@ if (loadError) {
     sandbox.window = sandbox;
     sandbox.globalThis = sandbox;
     sandbox.window.FarmCore = FarmCore;
+    sandbox.window.FarmMotion = require(path.join(REPO,'src','motion.js'));
     sandbox.window.FarmRenderer = { draw() {} };
 
     const context = vm.createContext(sandbox);
